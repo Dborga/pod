@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Download Processed Pages</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  </head>
+  <body>
+    <header>
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="logo">
+      <h1>Download Processed Pages</h1>
+    </header>
+    <main>
+      <ul class="download-list">
+        {% for fname in saved_files %}
+          <li><a href="{{ url_for('download_file', filename=fname) }}">{{ fname }}</a></li>
+        {% endfor %}
+      </ul>
+      <a class="back-link" href="{{ url_for('upload_file') }}">Upload another file</a>
+    </main>
+    <footer>
+      <p>&copy; {{ current_year() if current_year is defined else "2025" }} Your Company</p>
+    </footer>
+  </body>
+</html>
