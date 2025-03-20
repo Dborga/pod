@@ -7,6 +7,12 @@ from rapidfuzz import fuzz
 import pytesseract
 from PIL import Image
 import io
+import pytesseract
+pytesseract.pytesseract.tesseract_cmd = '/usr/local/bin/tesseract'
+
+
+
+
 
 # Set up logging to print processing steps to your terminal.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
