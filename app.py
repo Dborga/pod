@@ -15,6 +15,7 @@ pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 
 
 
+
 # Set up logging to print processing steps to your terminal.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
