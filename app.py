@@ -1,31 +1,29 @@
 import os
 import logging
 import fitz  # PyMuPDF
-import regex as re  # Using the regex module for advanced fuzzy matching
-from flask import Flask, request, redirect, url_for, flash, send_from_directory, render_template, send_file
+import regex as re
+from flask import Flask, request, redirect, url_for, flash, send_from_directory, render_template, send_file, session
 from rapidfuzz import fuzz
 import pytesseract
 from PIL import Image
 import io
-import shutil  # For ZIP creation
-import zipfile  # Add this import
-
+import shutil
+import zipfile
 
 pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 
-# Set up logging to print processing steps to your terminal.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
-app.secret_key = 'secret-key'  # Needed for flash messages
+app.secret_key = 'secret-key'
 
-# Directories for uploaded PDFs and output pages
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'outputs'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-# Mapping for customer naming conventions.
+UPLOAD_PASSWORD = os.getenv('UPLOAD_PASSWORD', 'Augerpods#1')
+
 customer_mapping = {
     "crevier lubricants inc": lambda po, d: f"Crevier {po}.{d}",
     "parkland fuel corporation": lambda _, d: f"Parkland {d}",
@@ -39,7 +37,6 @@ customer_mapping = {
 }
 
 def extract_po_delivery(text, customer):
-    """Extracts PO and delivery numbers from text."""
     po_number = None
     if customer == "crevier lubricants inc":
         po_match = re.search(r'PO\s*[:#]?\s*([5](?:\s*\d){5,})', text, re.IGNORECASE)
@@ -61,17 +58,15 @@ def extract_po_delivery(text, customer):
     return po_number, delivery_number
 
 def detect_customer(text):
-    """Detects customer name using fuzzy matching."""
     text_lower = text.lower()
     for customer in customer_mapping.keys():
         score = fuzz.partial_ratio(customer, text_lower)
-        if score >= 80:  
+        if score >= 80:
             logging.info(f"Detected customer '{customer}' with score {score}")
             return customer
     return None
 
 def save_page_as_pdf(input_pdf_path, page_number, output_filename):
-    """Extracts a single page and saves it as a new PDF."""
     try:
         doc = fitz.open(input_pdf_path)
         new_doc = fitz.open()
@@ -86,7 +81,6 @@ def save_page_as_pdf(input_pdf_path, page_number, output_filename):
         return None
 
 def perform_ocr(page):
-    """Performs OCR on a PDF page image."""
     try:
         pix = page.get_pixmap()
         img_bytes = pix.tobytes("png")
@@ -97,7 +91,6 @@ def perform_ocr(page):
         return ""
 
 def process_pdf(pdf_path):
-    """Processes PDF pages, extracts text, detects customer, and renames accordingly."""
     saved_files = []
     try:
         doc = fitz.open(pdf_path)
@@ -105,19 +98,15 @@ def process_pdf(pdf_path):
         for page_number in range(doc.page_count):
             page = doc.load_page(page_number)
             text = page.get_text()
-            
             if not text.strip() or len(text.strip()) < 20:
                 text = perform_ocr(page)
-
             customer = detect_customer(text)
             if customer:
                 po_number, delivery_number = extract_po_delivery(text, customer)
-
                 if customer == "crevier lubricants inc" and (not po_number or not delivery_number):
                     continue
                 elif customer != "crevier lubricants inc" and not delivery_number:
                     continue
-
                 naming_func = customer_mapping.get(customer)
                 output_filename = naming_func(po_number if po_number else "", delivery_number)
                 saved = save_page_as_pdf(pdf_path, page_number, output_filename)
@@ -128,9 +117,21 @@ def process_pdf(pdf_path):
         logging.error(f"Error processing PDF: {e}")
     return saved_files
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        password = request.form.get('password')
+        if password == UPLOAD_PASSWORD:
+            session['authenticated'] = True
+            return redirect(url_for('upload_file'))
+        else:
+            flash('Incorrect password. Please try again.')
+    return render_template('login.html')
+
 @app.route('/', methods=['GET', 'POST'])
 def upload_file():
-    """Handles file uploads and processing."""
+    if not session.get('authenticated'):
+        return redirect(url_for('login'))
     if request.method == 'POST':
         if 'pdf_file' not in request.files:
             flash('No file part')
@@ -148,22 +149,18 @@ def upload_file():
 
 @app.route('/download/<path:filename>')
 def download_file(filename):
-    """Serves a single processed file for download."""
     return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
 
 @app.route('/download_all')
 def download_all():
-    """Creates a ZIP archive of all processed PDFs and serves it for download."""
     zip_filename = "processed_files.zip"
     zip_path = os.path.join(OUTPUT_FOLDER, zip_filename)
-
-    with zipfile.ZipFile(zip_path, 'w') as zipf:  # Fix: Using zipfile instead of shutil
+    with zipfile.ZipFile(zip_path, 'w') as zipf:
         for file_name in os.listdir(OUTPUT_FOLDER):
             if file_name.endswith(".pdf"):
                 zipf.write(os.path.join(OUTPUT_FOLDER, file_name), file_name)
-
     return send_file(zip_path, as_attachment=True)
-
 
 if __name__ == '__main__':
     app.run(debug=True)
+
