@@ -4,7 +4,9 @@ FROM python:3.11-slim
 # Install system dependencies, including Tesseract OCR
 RUN apt-get update && \
     apt-get install -y tesseract-ocr tesseract-ocr-eng libtesseract-dev && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    which tesseract && tesseract --version
+
 
 # Set the Tesseract command path and tessdata prefix environment variables
 ENV TESSERACT_CMD=/usr/bin/tesseract
