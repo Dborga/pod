@@ -10,6 +10,7 @@ from PIL import Image
 import io
 import shutil
 import zipfile
+import subprocess
 
 pytesseract.pytesseract.tesseract_cmd = os.getenv('TESSERACT_CMD', '/usr/local/bin/tesseract')
 
@@ -17,6 +18,19 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 app = Flask(__name__)
 app.secret_key = 'secret-key'
+
+# --- Debug Endpoint ---
+@app.route('/debug-tesseract')
+def debug_tesseract():
+    # Get PATH environment variable
+    env_path = os.getenv("PATH", "Not set")
+    # Try to locate tesseract using the shell command
+    try:
+        tesseract_path = subprocess.check_output(["which", "tesseract"]).decode().strip()
+    except Exception as e:
+        tesseract_path = f"Error: {e}"
+    return f"PATH: {env_path}\nTesseract path: {tesseract_path}"
+# ----------------------
 
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'outputs'
@@ -197,6 +211,7 @@ def download_all():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
 
 
