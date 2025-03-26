@@ -9,8 +9,9 @@ from PIL import Image
 import io
 import shutil
 import zipfile
+import traceback
 
-pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+pytesseract.pytesseract.tesseract_cmd = os.getenv('TESSERACT_CMD', '/usr/local/bin/tesseract')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -33,7 +34,10 @@ customer_mapping = {
     "les petroles belisle": lambda _, d: f"Belisle {d}",
     "petro montestrie": lambda _, d: f"Petro Mont {d}",
     "petrole leger": lambda _, d: f"Leger {d}",
-    "rav petroleum": lambda _, d: f"Rav {d}"
+    "rav petroleum": lambda _, d: f"Rav {d}",
+    "united parcel service": lambda _, d: f"UPS {d}",
+    "canada clean fuels": lambda _, d: f"CanadaClean {d}",
+    "4refuel canada": lambda _, d: f"4Refuel {d}"
 }
 
 def extract_po_delivery(text, customer):
@@ -50,39 +54,55 @@ def extract_po_delivery(text, customer):
                 po_number = re.sub(r'\s+', '', raw)
 
     delivery_number = None
-    # First try standard delivery numbers (starting with 9)
-    delivery_match = re.search(r'(9(?:\s*\d){6})', text)
+    delivery_match = re.search(
+        r'(?:#\s*Livraison\s*[:#]?\s*|Delivery\s*#?\s*[:#]?\s*|#?\s*Livraison\s*)?'
+        r'(9\d{6,7})|'  # Standard 9-digit numbers
+        r'(\d{8}-\d+[A-Za-z]{1,2})|'  # Manual format with dash
+        r'(\d{8}\d+[A-Za-z]{1,2})',  # Manual format without dash
+        text
+    )
+    
     if delivery_match:
-        raw = delivery_match.group(1)
-        delivery_number = re.sub(r'\s+', '', raw)
-    else:
-        # Try manual delivery number pattern (date followed by sequence and initials)
-        # Patterns to match:
-        # 01102025-4DB
-        # 011020254DB
-        # 01102025-4D
-        # 011020254D
-        manual_delivery_match = re.search(
-            r'(\d{8})[-]?(\d+)([A-Za-z]{1,2})\b',
-            text
-        )
-        if manual_delivery_match:
-            date_part = manual_delivery_match.group(1)
-            sequence = manual_delivery_match.group(2)
-            initials = manual_delivery_match.group(3).upper()
-            # Reconstruct the delivery number in standard format
-            delivery_number = f"{date_part}-{sequence}{initials}"
-            logging.info(f"Found manual delivery number: {delivery_number}")
+        delivery_number = delivery_match.group(1) or delivery_match.group(2) or delivery_match.group(3)
+        if delivery_number:
+            delivery_number = re.sub(r'\s+', '', delivery_number)
+            if len(delivery_number) > 8 and not '-' in delivery_number and delivery_number[:8].isdigit():
+                delivery_number = f"{delivery_number[:8]}-{delivery_number[8:]}"
+    
+    if customer == "parkland fuel corporation" and not delivery_number:
+        delivery_match = re.search(r'(?:Livraison|Delivery)[^\d]*(\d{6,8})', text)
+        if delivery_match:
+            delivery_number = delivery_match.group(1)
+            logging.info(f"Found potential smudged Parkland delivery number: {delivery_number}")
 
     return po_number, delivery_number
 
 def detect_customer(text):
     text_lower = text.lower()
+    
+    for customer in customer_mapping.keys():
+        if customer in text_lower:
+            return customer
+    
     for customer in customer_mapping.keys():
         score = fuzz.partial_ratio(customer, text_lower)
         if score >= 80:
             logging.info(f"Detected customer '{customer}' with score {score}")
             return customer
+    
+    handwritten_matches = {
+        r'\bups\b': 'united parcel service',
+        r'\bparkland\b': 'parkland fuel corporation',
+        r'\becono\b': 'econo gas',
+        r'\bleger\b': 'petrole leger',
+        r'\bpetro\b': 'petro montestrie',
+        r'\bcrevier\b': 'crevier lubricants inc'
+    }
+    
+    for pattern, customer in handwritten_matches.items():
+        if re.search(pattern, text_lower):
+            return customer
+    
     return None
 
 def save_page_as_pdf(input_pdf_path, page_number, output_filename):
@@ -96,7 +116,7 @@ def save_page_as_pdf(input_pdf_path, page_number, output_filename):
         logging.info(f"Saved page {page_number + 1} as {output_path}")
         return output_filename + ".pdf"
     except Exception as e:
-        logging.error(f"Error saving page {page_number + 1}: {e}")
+        logging.error(f"Error saving page {page_number + 1}: {e}\n{traceback.format_exc()}")
         return None
 
 def perform_ocr(page):
@@ -104,36 +124,70 @@ def perform_ocr(page):
         pix = page.get_pixmap()
         img_bytes = pix.tobytes("png")
         img = Image.open(io.BytesIO(img_bytes))
-        return pytesseract.image_to_string(img)
+        
+        img = img.convert('L')
+        img = img.point(lambda x: 0 if x < 128 else 255, '1')
+        
+        custom_config = r'--oem 3 --psm 6'
+        text = pytesseract.image_to_string(img, config=custom_config)
+        
+        return text
     except Exception as e:
-        logging.error(f"Error during OCR: {e}")
+        logging.error(f"Error during OCR: {e}\n{traceback.format_exc()}")
         return ""
 
 def process_pdf(pdf_path):
+    if not os.path.exists(pdf_path):
+        logging.error(f"File not found: {pdf_path}")
+        return []
+    if not pdf_path.lower().endswith('.pdf'):
+        logging.error(f"Not a PDF file: {pdf_path}")
+        return []
+
     saved_files = []
     try:
         doc = fitz.open(pdf_path)
         logging.info(f"Processing PDF: {pdf_path} with {doc.page_count} pages.")
+        
         for page_number in range(doc.page_count):
-            page = doc.load_page(page_number)
-            text = page.get_text()
-            if not text.strip() or len(text.strip()) < 20:
-                text = perform_ocr(page)
-            customer = detect_customer(text)
-            if customer:
-                po_number, delivery_number = extract_po_delivery(text, customer)
-                if customer == "crevier lubricants inc" and (not po_number or not delivery_number):
-                    continue
-                elif customer != "crevier lubricants inc" and not delivery_number:
-                    continue
-                naming_func = customer_mapping.get(customer)
-                output_filename = naming_func(po_number if po_number else "", delivery_number)
-                saved = save_page_as_pdf(pdf_path, page_number, output_filename)
-                if saved:
-                    saved_files.append(saved)
+            try:
+                page = doc.load_page(page_number)
+                text = page.get_text()
+                
+                if not text.strip() or len(text.strip()) < 20 or "Livraison" not in text:
+                    text = perform_ocr(page)
+                
+                customer = detect_customer(text)
+                if customer:
+                    try:
+                        po_number, delivery_number = extract_po_delivery(text, customer)
+                        
+                        if customer == "parkland fuel corporation" and not delivery_number:
+                            last_resort_match = re.search(r'\b(\d{7})\b', text)
+                            if last_resort_match:
+                                delivery_number = last_resort_match.group(1)
+                                logging.warning(f"Using fallback delivery number for Parkland: {delivery_number}")
+                        
+                        if customer == "crevier lubricants inc" and (not po_number or not delivery_number):
+                            continue
+                        elif customer != "crevier lubricants inc" and not delivery_number:
+                            continue
+                        
+                        naming_func = customer_mapping.get(customer)
+                        output_filename = naming_func(po_number if po_number else "", delivery_number)
+                        saved = save_page_as_pdf(pdf_path, page_number, output_filename)
+                        if saved:
+                            saved_files.append(saved)
+                    except Exception as e:
+                        logging.error(f"Error processing page {page_number + 1} customer data: {e}\n{traceback.format_exc()}")
+                        continue
+            except Exception as e:
+                logging.error(f"Error processing page {page_number + 1}: {e}\n{traceback.format_exc()}")
+                continue
+        
         doc.close()
     except Exception as e:
-        logging.error(f"Error processing PDF: {e}")
+        logging.error(f"Error processing PDF: {e}\n{traceback.format_exc()}")
     return saved_files
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -182,4 +236,3 @@ def download_all():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
