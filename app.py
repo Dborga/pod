@@ -50,10 +50,29 @@ def extract_po_delivery(text, customer):
                 po_number = re.sub(r'\s+', '', raw)
 
     delivery_number = None
+    # First try standard delivery numbers (starting with 9)
     delivery_match = re.search(r'(9(?:\s*\d){6})', text)
     if delivery_match:
         raw = delivery_match.group(1)
         delivery_number = re.sub(r'\s+', '', raw)
+    else:
+        # Try manual delivery number pattern (date followed by sequence and initials)
+        # Patterns to match:
+        # 01102025-4DB
+        # 011020254DB
+        # 01102025-4D
+        # 011020254D
+        manual_delivery_match = re.search(
+            r'(\d{8})[-]?(\d+)([A-Za-z]{1,2})\b',
+            text
+        )
+        if manual_delivery_match:
+            date_part = manual_delivery_match.group(1)
+            sequence = manual_delivery_match.group(2)
+            initials = manual_delivery_match.group(3).upper()
+            # Reconstruct the delivery number in standard format
+            delivery_number = f"{date_part}-{sequence}{initials}"
+            logging.info(f"Found manual delivery number: {delivery_number}")
 
     return po_number, delivery_number
 
