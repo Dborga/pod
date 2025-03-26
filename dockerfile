@@ -6,6 +6,8 @@ RUN apt-get update && \
     apt-get install -y tesseract-ocr tesseract-ocr-eng libtesseract-dev && \
     rm -rf /var/lib/apt/lists/*
 
+# Set the Tesseract command path environment variable
+ENV TESSERACT_CMD=/usr/bin/tesseract
 
 # Set the working directory
 WORKDIR /app
@@ -22,4 +24,5 @@ EXPOSE 5000
 
 # Command to run your app with gunicorn; adjust as needed
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+
 
