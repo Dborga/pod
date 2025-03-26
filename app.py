@@ -2,7 +2,8 @@ import os
 import logging
 import fitz  # PyMuPDF
 import regex as re
-from flask import Flask, request, redirect, url_for, flash, send_from_directory, render_template, send_file, session
+from flask import Flask, request, redirect, url_for, flash, send_from_directory, render_template, send_file, session, make_response
+from datetime import datetime, timedelta
 from rapidfuzz import fuzz
 import pytesseract
 from PIL import Image
@@ -11,7 +12,6 @@ import shutil
 import zipfile
 
 pytesseract.pytesseract.tesseract_cmd = os.getenv('TESSERACT_CMD', '/usr/local/bin/tesseract')
-
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -57,12 +57,6 @@ def extract_po_delivery(text, customer):
         raw = delivery_match.group(1)
         delivery_number = re.sub(r'\s+', '', raw)
     else:
-        # Try manual delivery number pattern (date followed by sequence and initials)
-        # Patterns to match:
-        # 01102025-4DB
-        # 011020254DB
-        # 01102025-4D
-        # 011020254D
         manual_delivery_match = re.search(
             r'(\d{8})[-]?(\d+)([A-Za-z]{1,2})\b',
             text
@@ -71,7 +65,6 @@ def extract_po_delivery(text, customer):
             date_part = manual_delivery_match.group(1)
             sequence = manual_delivery_match.group(2)
             initials = manual_delivery_match.group(3).upper()
-            # Reconstruct the delivery number in standard format
             delivery_number = f"{date_part}-{sequence}{initials}"
             logging.info(f"Found manual delivery number: {delivery_number}")
 
@@ -137,21 +130,39 @@ def process_pdf(pdf_path):
         logging.error(f"Error processing PDF: {e}")
     return saved_files
 
+# ------------------ Authentication Changes ------------------
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         password = request.form.get('password')
         if password == UPLOAD_PASSWORD:
+            # Set a flag and record login time
             session['authenticated'] = True
+            session['login_time'] = datetime.utcnow().isoformat()
             return redirect(url_for('upload_file'))
         else:
             flash('Incorrect password. Please try again.')
     return render_template('login.html')
 
+def is_session_valid():
+    """Check if the current session is authenticated and not older than 15 minutes."""
+    login_time_str = session.get('login_time')
+    if not session.get('authenticated') or not login_time_str:
+        return False
+    login_time = datetime.fromisoformat(login_time_str)
+    if datetime.utcnow() - login_time > timedelta(minutes=15):
+        return False
+    return True
+
 @app.route('/', methods=['GET', 'POST'])
 def upload_file():
-    if not session.get('authenticated'):
+    # Require a valid session on every request
+    if not is_session_valid():
+        session.clear()
         return redirect(url_for('login'))
+
+    # Process the file if POST; otherwise, show the upload page.
     if request.method == 'POST':
         if 'pdf_file' not in request.files:
             flash('No file part')
@@ -164,9 +175,15 @@ def upload_file():
             file_path = os.path.join(UPLOAD_FOLDER, file.filename)
             file.save(file_path)
             saved_files = process_pdf(file_path)
+            # Clear session after a successful operation so that a refresh requires login
+            session.clear()
             return render_template('download.html', saved_files=saved_files) if saved_files else redirect(url_for('upload_file'))
-    return render_template('upload.html')
+    # For GET requests, clear the session immediately after showing the upload page.
+    response = make_response(render_template('upload.html'))
+    session.clear()
+    return response
 
+# Optionally, you might want to protect your download routes too.
 @app.route('/download/<path:filename>')
 def download_file(filename):
     return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
@@ -183,4 +200,5 @@ def download_all():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
