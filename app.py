@@ -162,7 +162,6 @@ def upload_file():
         session.clear()
         return redirect(url_for('login'))
 
-    # Process the file if POST; otherwise, show the upload page.
     if request.method == 'POST':
         if 'pdf_file' not in request.files:
             flash('No file part')
@@ -175,13 +174,11 @@ def upload_file():
             file_path = os.path.join(UPLOAD_FOLDER, file.filename)
             file.save(file_path)
             saved_files = process_pdf(file_path)
-            # Clear session after a successful operation so that a refresh requires login
-            session.clear()
+            # Update the session's login time to maintain activity
+            session['login_time'] = datetime.utcnow().isoformat()
             return render_template('download.html', saved_files=saved_files) if saved_files else redirect(url_for('upload_file'))
-    # For GET requests, clear the session immediately after showing the upload page.
-    response = make_response(render_template('upload.html'))
-    session.clear()
-    return response
+    # On GET requests, simply render the upload page without clearing the session.
+    return render_template('upload.html')
 
 # Optionally, you might want to protect your download routes too.
 @app.route('/download/<path:filename>')
@@ -200,5 +197,6 @@ def download_all():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
 
