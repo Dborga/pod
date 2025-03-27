@@ -1,22 +1,10 @@
-[project]
-name = "pods"
-version = "0.1.0"
-description = ""
-authors = [
-    {name = "Your Name",email = "you@example.com"}
-]
-readme = "README.md"
-requires-python = ">=3.11"
-dependencies = [
-]
-
 [tool.poetry]
 name = "pods"
 version = "0.1.0"
 description = ""
-authors = ["Your Name <youremail@example.com>"]
-# Optionally, you can add a readme file if available
+authors = ["Your Name <you@example.com>"]
 readme = "README.md"
+requires-python = ">=3.11"
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -27,18 +15,11 @@ PyMuPDF = "1.25.4"
 regex = "2024.11.6"
 rapidfuzz = "3.12.2"
 pillow = "11.1.0"
-# add any other dependencies your project requires
 
 [tool.poetry.dev-dependencies]
 # Add dev dependencies here if needed
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
-
-
-
-
-[build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
