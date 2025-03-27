@@ -11,8 +11,8 @@ RUN apt-get update && \
 ENV TESSERACT_CMD=/usr/bin/tesseract
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
-# Set the working directory to /pod (adjust if you prefer a different directory)
-WORKDIR /pod
+# Set the working directory to where your files live in Render
+WORKDIR /opt/render/project/src
 
 # Install Poetry
 RUN curl -sSL https://install.python-poetry.org | python - && \
@@ -24,18 +24,19 @@ RUN poetry config virtualenvs.create false && \
     poetry install --no-interaction --no-ansi --no-root && \
     which gunicorn && gunicorn --version
 
-# Copy the rest of your project files into /pod
+# Copy the rest of your project files (they are already in the correct location)
 COPY . .
 
-# Copy the entrypoint script into the working directory
-COPY entrypoint.sh /pod/entrypoint.sh
-RUN chmod +x /pod/entrypoint.sh
+# Ensure the entrypoint script is executable
+RUN chmod +x entrypoint.sh
 
-# Expose a default port (this is informational)
+# Expose a default port (for documentation)
 EXPOSE 5000
 
-# Set the container's entrypoint to the script
-ENTRYPOINT ["/pod/entrypoint.sh"]
+# Use the entrypoint script as the container's entrypoint
+# Since WORKDIR is set to /opt/render/project/src, this finds entrypoint.sh there.
+ENTRYPOINT ["sh", "./entrypoint.sh"]
+
 
 
 
