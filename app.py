@@ -6,7 +6,7 @@ from flask import Flask, request, redirect, url_for, flash, send_from_directory,
 from datetime import datetime, timedelta
 from rapidfuzz import fuzz
 import pytesseract
-from PIL import Image, ImageOps, ImageFilter
+from PIL import Image
 import io
 import shutil
 import zipfile
@@ -84,71 +84,35 @@ def extract_po_delivery(text, customer):
 
     return po_number, delivery_number
 
-# ---------------------------
-# Added synonyms for "Parkland Fuel Corporation" to catch partial or smudged matches
-# and still classify as "parkland fuel corporation".
-# ---------------------------
 def detect_customer(text):
     text_lower = text.lower()
-
-    # Synonyms dictionary to improve detection of smudged or partial "Parkland"
-    synonyms = {
-        "parkland fuel corporation": [
-            "parkland fuel corporation",
-            "parkland corp",
-            "parkland fuel corp",
-            "parkland fuel corp.",
-            "parkland"  # plain "parkland" as well
-        ],
-        "crevier lubricants inc": [
-            "crevier lubricants inc"
-        ],
-        "catalina": ["catalina"],
-        "econo gas": ["econo gas"],
-        "fuel it": ["fuel it"],
-        "les petroles belisle": ["les petroles belisle"],
-        "petro montestrie": ["petro montestrie"],
-        "petrole leger": ["petrole leger"],
-        "rav petroleum": ["rav petroleum"]
-    }
-
-    # For each customer in the mapping, check synonyms if available
     for customer in customer_mapping.keys():
-        possible_matches = synonyms.get(customer, [customer])
-        for pm in possible_matches:
-            score = fuzz.partial_ratio(pm, text_lower)
-            if score >= 80:
-                logging.info(f"Detected customer '{customer}' with score {score} using match '{pm}'")
-                return customer
+        score = fuzz.partial_ratio(customer, text_lower)
+        if score >= 80:
+            logging.info(f"Detected customer '{customer}' with score {score}")
+            return customer
     return None
 
-# ---------------------------
-# Added mild preprocessing to enhance OCR results for slightly smudged text or good handwriting.
-# ---------------------------
+def save_page_as_pdf(input_pdf_path, page_number, output_filename):
+    try:
+        doc = fitz.open(input_pdf_path)
+        new_doc = fitz.open()
+        new_doc.insert_pdf(doc, from_page=page_number, to_page=page_number)
+        output_path = os.path.join(OUTPUT_FOLDER, output_filename + ".pdf")
+        new_doc.save(output_path)
+        new_doc.close()
+        logging.info(f"Saved page {page_number + 1} as {output_path}")
+        return output_filename + ".pdf"
+    except Exception as e:
+        logging.error(f"Error saving page {page_number + 1}: {e}")
+        return None
+
 def perform_ocr(page):
     try:
         pix = page.get_pixmap()
         img_bytes = pix.tobytes("png")
         img = Image.open(io.BytesIO(img_bytes))
-
-        # Convert to grayscale
-        img = ImageOps.grayscale(img)
-
-        # Binarize (threshold)
-        img = img.point(lambda x: 0 if x < 128 else 255, '1')
-
-        # Convert back to "L" for mild morphological operations
-        img = img.convert("L")
-
-        # Apply a mild dilation followed by erosion (or vice versa)
-        # This helps reconnect broken letters or remove small noise.
-        img = img.filter(ImageFilter.MinFilter(3))  # mild dilation
-        img = img.filter(ImageFilter.MaxFilter(3))  # mild erosion
-
-        # Run Tesseract with a standard config
-        text_result = pytesseract.image_to_string(img, config="--psm 6")
-
-        return text_result
+        return pytesseract.image_to_string(img)
     except Exception as e:
         logging.error(f"Error during OCR: {e}")
         return ""
@@ -179,20 +143,6 @@ def process_pdf(pdf_path):
     except Exception as e:
         logging.error(f"Error processing PDF: {e}")
     return saved_files
-
-def save_page_as_pdf(input_pdf_path, page_number, output_filename):
-    try:
-        doc = fitz.open(input_pdf_path)
-        new_doc = fitz.open()
-        new_doc.insert_pdf(doc, from_page=page_number, to_page=page_number)
-        output_path = os.path.join(OUTPUT_FOLDER, output_filename + ".pdf")
-        new_doc.save(output_path)
-        new_doc.close()
-        logging.info(f"Saved page {page_number + 1} as {output_path}")
-        return output_filename + ".pdf"
-    except Exception as e:
-        logging.error(f"Error saving page {page_number + 1}: {e}")
-        return None
 
 # ------------------ Authentication Changes ------------------
 
