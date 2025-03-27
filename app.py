@@ -188,29 +188,40 @@ def upload_file():
             file_path = os.path.join(UPLOAD_FOLDER, file.filename)
             file.save(file_path)
             saved_files = process_pdf(file_path)
-            # Update the session's login time to maintain activity
+            # Store the list of files from the current upload in the session
+            session['saved_files'] = saved_files
             session['login_time'] = datetime.utcnow().isoformat()
             return render_template('download.html', saved_files=saved_files) if saved_files else redirect(url_for('upload_file'))
     # On GET requests, simply render the upload page without clearing the session.
     return render_template('upload.html')
 
-# Optionally, you might want to protect your download routes too.
 @app.route('/download/<path:filename>')
 def download_file(filename):
     return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
 
+# Updated download_all route to only include files from the current upload session
 @app.route('/download_all')
 def download_all():
+    saved_files = session.get('saved_files', [])
+    if not saved_files:
+        flash("No recent files available for download.")
+        return redirect(url_for('upload_file'))
+
     zip_filename = "processed_files.zip"
     zip_path = os.path.join(OUTPUT_FOLDER, zip_filename)
+    
+    # Create the zip file with only the current session's files
     with zipfile.ZipFile(zip_path, 'w') as zipf:
-        for file_name in os.listdir(OUTPUT_FOLDER):
-            if file_name.endswith(".pdf"):
-                zipf.write(os.path.join(OUTPUT_FOLDER, file_name), file_name)
+        for file_name in saved_files:
+            file_path = os.path.join(OUTPUT_FOLDER, file_name)
+            if os.path.exists(file_path):
+                zipf.write(file_path, file_name)
+    
     return send_file(zip_path, as_attachment=True)
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
 
 
