@@ -11,7 +11,7 @@ RUN apt-get update && \
 ENV TESSERACT_CMD=/usr/bin/tesseract
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
-# Set the working directory to where your files live in Render
+# Set the working directory to the repository root
 WORKDIR /opt/render/project/src
 
 # Install Poetry
@@ -21,21 +21,22 @@ RUN curl -sSL https://install.python-poetry.org | python - && \
 # Copy Poetry configuration files and install dependencies using Poetry
 COPY pyproject.toml poetry.lock* ./
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi --no-root && \
+    poetry install --no-interaction --no-ansi && \
     which gunicorn && gunicorn --version
 
-# Copy the rest of your project files (they are already in the correct location)
+# Copy the rest of your project files into the working directory
 COPY . .
 
-# Ensure the entrypoint script is executable
-RUN chmod +x entrypoint.sh
+# Explicitly copy the entrypoint script to the root directory
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-# Expose a default port (for documentation)
+# Expose the default port (informational)
 EXPOSE 5000
 
 # Use the entrypoint script as the container's entrypoint
-# Since WORKDIR is set to /opt/render/project/src, this finds entrypoint.sh there.
-ENTRYPOINT ["sh", "./entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]
+
 
 
 
