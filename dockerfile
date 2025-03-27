@@ -7,7 +7,6 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     which tesseract && tesseract --version
 
-
 # Set the Tesseract command path and tessdata prefix environment variables
 ENV TESSERACT_CMD=/usr/bin/tesseract
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
@@ -22,10 +21,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of your application code
 COPY . .
 
-# Expose the port (if your app uses one, e.g., 5000)
+# Expose the port your app uses (5000)
 EXPOSE 5000
 
-# Command to run your app with gunicorn; adjust as needed
+# Command to run your app with gunicorn via Poetry
 CMD ["poetry", "run", "gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
 
 
