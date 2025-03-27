@@ -31,7 +31,8 @@ COPY . .
 EXPOSE $PORT
 
 # Command to run your app with Gunicorn, binding to the provided PORT
-CMD gunicorn --bind 0.0.0.0:$PORT app:app
+CMD exec gunicorn --bind 0.0.0.0:${PORT:-5000} app:app
+
 
 
 
