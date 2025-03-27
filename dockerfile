@@ -27,11 +27,12 @@ RUN poetry config virtualenvs.create false && \
 # Copy the rest of your application code
 COPY . .
 
-# Expose the port (if your app uses one, e.g., 5000)
-EXPOSE 5000
+# Expose the port (Render provides the PORT environment variable)
+EXPOSE $PORT
 
-# Command to run your app with gunicorn directly
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+# Command to run your app with Gunicorn, binding to the provided PORT
+CMD gunicorn --bind 0.0.0.0:$PORT app:app
+
 
 
 
