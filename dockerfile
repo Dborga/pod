@@ -11,8 +11,8 @@ RUN apt-get update && \
 ENV TESSERACT_CMD=/usr/bin/tesseract
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
-# Set the working directory
-WORKDIR /app
+# Set the working directory to /pod (adjust if you prefer a different directory)
+WORKDIR /pod
 
 # Install Poetry
 RUN curl -sSL https://install.python-poetry.org | python - && \
@@ -21,21 +21,22 @@ RUN curl -sSL https://install.python-poetry.org | python - && \
 # Copy Poetry configuration files and install dependencies using Poetry
 COPY pyproject.toml poetry.lock* ./
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi && \
+    poetry install --no-interaction --no-ansi --no-root && \
     which gunicorn && gunicorn --version
 
-# Copy the rest of your application code
+# Copy the rest of your project files into /pod
 COPY . .
 
 # Copy the entrypoint script into the working directory
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+COPY entrypoint.sh /pod/entrypoint.sh
+RUN chmod +x /pod/entrypoint.sh
 
 # Expose a default port (this is informational)
 EXPOSE 5000
 
-# Use the entrypoint script as the container's entrypoint
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Set the container's entrypoint to the script
+ENTRYPOINT ["/pod/entrypoint.sh"]
+
 
 
 
