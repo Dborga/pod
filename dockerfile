@@ -18,11 +18,11 @@ WORKDIR /app
 RUN curl -sSL https://install.python-poetry.org | python - && \
     ln -s /root/.local/bin/poetry /usr/local/bin/poetry
 
-# Copy the Poetry configuration files
+# Copy Poetry configuration files and install dependencies using Poetry
 COPY pyproject.toml poetry.lock* ./
-
-# Install dependencies using Poetry (disable virtualenv creation so dependencies are installed globally)
-RUN poetry config virtualenvs.create false && poetry install --no-dev --no-interaction --no-ansi
+RUN poetry config virtualenvs.create false && \
+    poetry install --no-dev --no-interaction --no-ansi && \
+    which gunicorn && gunicorn --version
 
 # Copy the rest of your application code
 COPY . .
@@ -30,8 +30,9 @@ COPY . .
 # Expose the port (if your app uses one, e.g., 5000)
 EXPOSE 5000
 
-# Command to run your app with gunicorn via Poetry
-CMD ["poetry", "run", "gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+# Command to run your app with gunicorn directly
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+
 
 
 
