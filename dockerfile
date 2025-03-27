@@ -24,19 +24,19 @@ RUN poetry config virtualenvs.create false && \
     poetry install --no-interaction --no-ansi && \
     which gunicorn && gunicorn --version
 
-
 # Copy the rest of your application code
 COPY . .
 
-# Copy the entrypoint script into the container
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Copy the entrypoint script into the working directory
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Expose a default port (this is informational)
 EXPOSE 5000
 
 # Use the entrypoint script as the container's entrypoint
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/app/entrypoint.sh"]
+
 
 
 
