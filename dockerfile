@@ -21,17 +21,22 @@ RUN curl -sSL https://install.python-poetry.org | python - && \
 # Copy Poetry configuration files and install dependencies using Poetry
 COPY pyproject.toml poetry.lock* ./
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-dev --no-interaction --no-ansi && \
+    poetry install --no-interaction --no-ansi && \
     which gunicorn && gunicorn --version
+
 
 # Copy the rest of your application code
 COPY . .
 
-# Expose the port (Render provides the PORT environment variable)
-EXPOSE $PORT
+# Copy the entrypoint script into the container
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-# Command to run your app with Gunicorn, binding to the provided PORT
-CMD exec gunicorn --bind 0.0.0.0:${PORT:-5000} app:app
+# Expose a default port (this is informational)
+EXPOSE 5000
+
+# Use the entrypoint script as the container's entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
 
 
 
