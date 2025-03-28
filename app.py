@@ -130,12 +130,19 @@ def process_pdf(pdf_path):
             customer = detect_customer(text)
             if customer:
                 po_number, delivery_number = extract_po_delivery(text, customer)
-                if customer == "crevier lubricants inc" and (not po_number or not delivery_number):
-                    continue
-                elif customer != "crevier lubricants inc" and not delivery_number:
-                    continue
-                naming_func = customer_mapping.get(customer)
-                output_filename = naming_func(po_number if po_number else "", delivery_number)
+                # If all required details are found, use the usual naming.
+                # Otherwise, fallback to customer name with page number for distinction.
+                if customer == "crevier lubricants inc":
+                    if po_number and delivery_number:
+                        output_filename = customer_mapping[customer](po_number, delivery_number)
+                    else:
+                        output_filename = f"Crevier_{page_number + 1}"
+                else:
+                    if delivery_number:
+                        output_filename = customer_mapping[customer]("", delivery_number)
+                    else:
+                        fallback_name = customer_mapping[customer]("", "").strip()
+                        output_filename = f"{fallback_name}_{page_number + 1}"
                 saved = save_page_as_pdf(pdf_path, page_number, output_filename)
                 if saved:
                     saved_files.append(saved)
@@ -221,8 +228,3 @@ def download_all():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-
-
-
-
