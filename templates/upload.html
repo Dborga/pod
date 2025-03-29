@@ -1,34 +1,104 @@
 <!doctype html>
 <html lang="en">
-  <head>
+
+<head>
     <meta charset="utf-8">
     <title>Upload PDF</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-  </head>
-  <body>
+    <style>
+        body {
+            background: url("{{ url_for('static', filename='images/Canada.svg') }}") no-repeat center center fixed;
+            background-size: cover;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        header {
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        header .logo {
+            max-width: 150px;
+            display: block;
+            margin: 0 auto 10px;
+        }
+
+        main {
+            background-color: #FFFFFF;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.15);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .file-input input[type="file"] {
+            display: block;
+            margin: 0 auto 20px;
+        }
+
+        .flashes {
+            list-style: none;
+            padding: 0;
+            text-align: center;
+            color: #B22222;
+        }
+
+        .truck-animation {
+            position: absolute;
+            bottom: 10px;
+            left: -200px;
+            width: 150px;
+            opacity: 0.9;
+            animation: driveTruck 10s linear infinite;
+        }
+
+        @keyframes driveTruck {
+            0% { left: -200px; }
+            100% { left: calc(100%); }
+        }
+
+        footer {
+            text-align: center;
+            padding: 10px;
+            background: #f0f0f0;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+
+<body>
     <header>
-      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="logo">
-      <h1>Upload a PDF File</h1>
+        <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="logo">
+        <h1>Upload a PDF File</h1>
     </header>
     <main>
-      <form method="post" enctype="multipart/form-data">
-        <div class="file-input">
-          <input type="file" name="pdf_file" id="pdf_file" required>
-        </div>
-        <button type="submit">Upload</button>
-      </form>
-      {% with messages = get_flashed_messages() %}
+        <form method="post" enctype="multipart/form-data">
+            <div class="file-input">
+                <input type="file" name="pdf_file" id="pdf_file" required>
+            </div>
+            <button type="submit">Upload</button>
+        </form>
+
+        {% with messages = get_flashed_messages() %}
         {% if messages %}
-          <ul class="flashes">
+        <ul class="flashes">
             {% for message in messages %}
-              <li>{{ message }}</li>
+            <li>{{ message }}</li>
             {% endfor %}
-          </ul>
+        </ul>
         {% endif %}
-      {% endwith %}
+        {% endwith %}
+
+        <!-- Truck Animation -->
+        <img src="{{ url_for('static', filename='images/truck.jpg') }}" alt="Truck" class="truck-animation">
     </main>
     <footer>
-      <p>&copy; {{ current_year() if current_year is defined else "2025" }} Mansfield Energy</p>
+        <p>&copy; {{ current_year() if current_year is defined else "2025" }} Mansfield Energy</p>
     </footer>
-  </body>
+</body>
+
 </html>
