@@ -11,23 +11,12 @@ import io
 import zipfile
 import subprocess
 
+# --- Configuration ---
 pytesseract.pytesseract.tesseract_cmd = os.getenv('TESSERACT_CMD', '/usr/local/bin/tesseract')
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
 app.secret_key = 'secret-key'
-
-# --- Debug Endpoint ---
-@app.route('/debug-tesseract')
-def debug_tesseract():
-    env_path = os.getenv("PATH", "Not set")
-    try:
-        tesseract_path = subprocess.check_output(["which", "tesseract"]).decode().strip()
-    except Exception as e:
-        tesseract_path = f"Error: {e}"
-    return f"PATH: {env_path}\nTesseract path: {tesseract_path}"
-# ----------------------
 
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'outputs'
@@ -37,177 +26,157 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 UPLOAD_PASSWORD = os.getenv('UPLOAD_PASSWORD', 'Augerpods#1')
 
 customer_mapping = {
-    "crevier lubricants inc": lambda po, d: f"Crevier {po}.{d}",
+    "crevier lubricants inc":    lambda po, d: f"Crevier {po}.{d}",
     "parkland fuel corporation": lambda _, d: f"Parkland {d}",
-    "catalina": lambda _, d: f"Catalina {d}",
-    "econo gas": lambda _, d: f"Econogas {d}",
-    "fuel it": lambda _, d: f"Fuel It {d}",
-    "les petroles belisle": lambda _, d: f"Belisle {d}",
-    "petro montestrie": lambda _, d: f"Petro Mont {d}",
-    "petrole leger": lambda _, d: f"Leger {d}",
-    "rav petroleum": lambda _, d: f"Rav {d}",
-    "st-pierre fuels inc": lambda _, d: f"Stpierre {d}"
+    "catalina":                  lambda _, d: f"Catalina {d}",
+    "econo gas":                 lambda _, d: f"Econogas {d}",
+    "fuel it":                   lambda _, d: f"Fuel It {d}",
+    "les petroles belisle":      lambda _, d: f"Belisle {d}",
+    "petro montestrie":          lambda _, d: f"Petro Mont {d}",
+    "petrole leger":             lambda _, d: f"Leger {d}",
+    "rav petroleum":             lambda _, d: f"Rav {d}",
+    "st-pierre fuels inc":       lambda _, d: f"Stpierre {d}"
 }
 
+# --- OCR & PDF helpers ---
+def perform_ocr(page):
+    try:
+        pix = page.get_pixmap()
+        img = Image.open(io.BytesIO(pix.tobytes("png")))
+        return pytesseract.image_to_string(img)
+    except Exception as e:
+        logging.error(f"OCR error: {e}")
+        return ""
+
+def save_page_as_pdf(input_pdf, page_no, name):
+    try:
+        src = fitz.open(input_pdf)
+        dst = fitz.open()
+        dst.insert_pdf(src, from_page=page_no, to_page=page_no)
+        out_path = os.path.join(OUTPUT_FOLDER, name + ".pdf")
+        dst.save(out_path)
+        dst.close()
+        logging.info(f"Saved page {page_no+1} as {out_path}")
+        return True
+    except Exception as e:
+        logging.error(f"Error saving page {page_no+1}: {e}")
+        return False
+
+# --- Extraction logic ---
 def extract_po_delivery(text, customer):
+    # PO extraction (Crevier)
     po_number = None
     if customer == "crevier lubricants inc":
-        po_match = re.search(r'PO\s*[:#]?\s*([5](?:\s*\d){5,})', text, re.IGNORECASE)
-        if po_match:
-            raw = po_match.group(1)
-            po_number = re.sub(r'\s+', '', raw)
-        else:
-            po_match = re.search(r'\b(5(?:\s*\d){5})\b', text)
-            if po_match:
-                raw = po_match.group(1)
-                po_number = re.sub(r'\s+', '', raw)
+        m = re.search(r'PO\s*[:#]?\s*([5](?:\s*\d){5,})', text, re.IGNORECASE)
+        if m:
+            po_number = re.sub(r'\D', '', m.group(1))
 
+    # DELIVERY extraction: improved overlapping regex (no newlines)
     delivery_number = None
-    delivery_match = re.search(r'(9(?:\s*\d){6})', text)
-    if delivery_match:
-        raw = delivery_match.group(1)
-        delivery_number = re.sub(r'\s+', '', raw)
-    else:
-        manual_delivery_match = re.search(r'(\d{8})[-]?(\d+)([A-Za-z]{1,2})\b', text)
-        if manual_delivery_match:
-            date_part = manual_delivery_match.group(1)
-            sequence = manual_delivery_match.group(2)
-            initials = manual_delivery_match.group(3).upper()
-            delivery_number = f"{date_part}-{sequence}{initials}"
+    overlaps = [mo.group(1) for mo in re.finditer(r'(?=(9(?:[ \t]*\d){6}))', text)]
+    for raw in overlaps:
+        norm = re.sub(r'\D', '', raw)
+        if len(norm) == 7:
+            delivery_number = norm
+            logging.info(f"Found delivery number via improved regex: {delivery_number}")
+            break
+
+    # fallback manual pattern
+    if not delivery_number:
+        m2 = re.search(r'(\d{8})-?(\d+)([A-Za-z]{1,2})\b', text)
+        if m2:
+            delivery_number = f"{m2.group(1)}-{m2.group(2)}{m2.group(3).upper()}"
             logging.info(f"Found manual delivery number: {delivery_number}")
 
     return po_number, delivery_number
 
+
 def detect_customer(text):
-    text_lower = text.lower()
-    for customer in customer_mapping:
-        score = fuzz.partial_ratio(customer, text_lower)
-        if score >= 80:
-            logging.info(f"Detected customer '{customer}' with score {score}")
-            return customer
+    tl = text.lower()
+    for cust in customer_mapping:
+        if fuzz.partial_ratio(cust, tl) >= 80:
+            logging.info(f"Detected customer '{cust}'")
+            return cust
     return None
 
-def save_page_as_pdf(input_pdf_path, page_number, output_filename):
+
+def process_pdf(path):
+    results = []
+    doc = fitz.open(path)
+    logging.info(f"Processing '{path}' with {doc.page_count} pages")
+    for i in range(doc.page_count):
+        page = doc.load_page(i)
+        txt = page.get_text().strip()
+        if not txt or len(txt) < 20:
+            name = f"Unread_{i+1}"
+            if save_page_as_pdf(path, i, name):
+                results.append(name + ".pdf")
+            continue
+
+        cust = detect_customer(txt)
+        if not cust:
+            logging.info(f"Skipping page {i+1}: readable but no customer match")
+            continue
+
+        po, dlv = extract_po_delivery(txt, cust)
+        if cust == "crevier lubricants inc":
+            base = customer_mapping[cust](po or "", dlv or "")
+        else:
+            base = customer_mapping[cust]("", dlv or "")
+
+        if not dlv:
+            fallback = customer_mapping[cust]("", "").strip().replace(" ", "")
+            base = f"{fallback}_{i+1}"
+
+        if save_page_as_pdf(path, i, base):
+            results.append(base + ".pdf")
+
+    doc.close()
+    return results
+
+# --- Flask routes ---
+@app.route('/debug-tesseract')
+def debug_tesseract():
+    p = os.getenv("PATH", "")
     try:
-        doc = fitz.open(input_pdf_path)
-        new_doc = fitz.open()
-        new_doc.insert_pdf(doc, from_page=page_number, to_page=page_number)
-        output_path = os.path.join(OUTPUT_FOLDER, output_filename + ".pdf")
-        new_doc.save(output_path)
-        new_doc.close()
-        logging.info(f"Saved page {page_number + 1} as {output_path}")
-        return output_filename + ".pdf"
-    except Exception as e:
-        logging.error(f"Error saving page {page_number + 1}: {e}")
-        return None
+        which = subprocess.check_output(["which", "tesseract"]).decode().strip()
+    except:
+        which = "not found"
+    return f"PATH={p}\nTesseract={which}"
 
-def perform_ocr(page):
-    try:
-        pix = page.get_pixmap()
-        img_bytes = pix.tobytes("png")
-        img = Image.open(io.BytesIO(img_bytes))
-        return pytesseract.image_to_string(img)
-    except Exception as e:
-        logging.error(f"Error during OCR: {e}")
-        return ""
-
-def process_pdf(pdf_path):
-    saved_files = []
-    try:
-        doc = fitz.open(pdf_path)
-        logging.info(f"Processing PDF: {pdf_path} with {doc.page_count} pages.")
-        for page_number in range(doc.page_count):
-            page = doc.load_page(page_number)
-            raw_text = page.get_text()
-            if not raw_text.strip() or len(raw_text.strip()) < 20:
-                text = perform_ocr(page)
-                used_ocr = True
-            else:
-                text = raw_text
-                used_ocr = False
-
-            customer = detect_customer(text)
-            if customer:
-                po_number, delivery_number = extract_po_delivery(text, customer)
-                if customer == "crevier lubricants inc":
-                    if po_number and delivery_number:
-                        filename = customer_mapping[customer](po_number, delivery_number)
-                    else:
-                        filename = f"Crevier_{page_number + 1}"
-                else:
-                    if delivery_number:
-                        filename = customer_mapping[customer]("", delivery_number)
-                    else:
-                        fallback = customer_mapping[customer]("", "").strip()
-                        filename = f"{fallback}_{page_number + 1}"
-
-                saved = save_page_as_pdf(pdf_path, page_number, filename)
-                if saved:
-                    saved_files.append(saved)
-
-            else:
-                if used_ocr:
-                    # Unreadable page -> save as Unread_{n}
-                    filename = f"Unread_{page_number + 1}"
-                    saved = save_page_as_pdf(pdf_path, page_number, filename)
-                    if saved:
-                        saved_files.append(saved)
-                else:
-                    # Readable but customer not on list -> skip
-                    logging.info(f"Skipping page {page_number + 1}: readable but no matching customer")
-                    continue
-
-        doc.close()
-    except Exception as e:
-        logging.error(f"Error processing PDF: {e}")
-    return saved_files
-
-# ------------------ Authentication & Routes ------------------
-
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/login', methods=['GET','POST'])
 def login():
     if request.method == 'POST':
-        password = request.form.get('password')
-        if password == UPLOAD_PASSWORD:
+        if request.form.get('password') == UPLOAD_PASSWORD:
             session['authenticated'] = True
             session['login_time'] = datetime.utcnow().isoformat()
             return redirect(url_for('upload_file'))
-        else:
-            flash('Incorrect password. Please try again.')
+        flash('Incorrect password')
     return render_template('login.html')
 
 def is_session_valid():
-    login_time_str = session.get('login_time')
-    if not session.get('authenticated') or not login_time_str:
+    lt = session.get('login_time')
+    if not session.get('authenticated') or not lt:
         return False
-    login_time = datetime.fromisoformat(login_time_str)
-    if datetime.utcnow() - login_time > timedelta(minutes=15):
-        return False
-    return True
+    return (datetime.utcnow() - datetime.fromisoformat(lt)) < timedelta(minutes=15)
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/', methods=['GET','POST'])
 def upload_file():
     if not is_session_valid():
         session.clear()
         return redirect(url_for('login'))
-
     if request.method == 'POST':
-        if 'pdf_file' not in request.files:
-            flash('No file part')
+        f = request.files.get('pdf_file')
+        if not f or f.filename == '':
+            flash('No file selected')
             return redirect(request.url)
-        file = request.files['pdf_file']
-        if file.filename == '':
-            flash('No selected file')
-            return redirect(request.url)
-        file_path = os.path.join(UPLOAD_FOLDER, file.filename)
-        file.save(file_path)
-        saved_files = process_pdf(file_path)
-        session['saved_files'] = saved_files
+        path = os.path.join(UPLOAD_FOLDER, f.filename)
+        f.save(path)
+        files = process_pdf(path)
+        session['saved_files'] = files
         session['login_time'] = datetime.utcnow().isoformat()
-        if saved_files:
-            return render_template('download.html', saved_files=saved_files)
-        return redirect(url_for('upload_file'))
-
+        if files:
+            return render_template('download.html', saved_files=files)
     return render_template('upload.html')
 
 @app.route('/download/<path:filename>')
@@ -216,18 +185,17 @@ def download_file(filename):
 
 @app.route('/download_all')
 def download_all():
-    saved_files = session.get('saved_files', [])
-    if not saved_files:
-        flash("No recent files available for download.")
+    files = session.get('saved_files', [])
+    if not files:
+        flash("No files to download")
         return redirect(url_for('upload_file'))
-
-    zip_filename = "processed_files.zip"
-    zip_path = os.path.join(OUTPUT_FOLDER, zip_filename)
-    with zipfile.ZipFile(zip_path, 'w') as zipf:
-        for fname in saved_files:
-            fpath = os.path.join(OUTPUT_FOLDER, fname)
-            if os.path.exists(fpath):
-                zipf.write(fpath, fname)
+    zip_name = "processed.zip"
+    zip_path = os.path.join(OUTPUT_FOLDER, zip_name)
+    with zipfile.ZipFile(zip_path, 'w') as z:
+        for fn in files:
+            p = os.path.join(OUTPUT_FOLDER, fn)
+            if os.path.exists(p):
+                z.write(p, fn)
     return send_file(zip_path, as_attachment=True)
 
 if __name__ == '__main__':
