@@ -48,7 +48,8 @@ customer_mapping = {
     "les petroles belisle": lambda _, d: f"Belisle {d}",
     "petro montestrie": lambda _, d: f"Petro Mont {d}",
     "petrole leger": lambda _, d: f"Leger {d}",
-    "rav petroleum": lambda _, d: f"Rav {d}"
+    "rav petroleum": lambda _, d: f"Rav {d}",
+    "st-pierre fuels inc": lambda _, d: f"Stpierre {d}"   # <-- New customer mapping
 }
 
 def extract_po_delivery(text, customer):
@@ -127,11 +128,10 @@ def process_pdf(pdf_path):
             text = page.get_text()
             if not text.strip() or len(text.strip()) < 20:
                 text = perform_ocr(page)
+
             customer = detect_customer(text)
             if customer:
                 po_number, delivery_number = extract_po_delivery(text, customer)
-                # If all required details are found, use the usual naming.
-                # Otherwise, fallback to customer name with page number for distinction.
                 if customer == "crevier lubricants inc":
                     if po_number and delivery_number:
                         output_filename = customer_mapping[customer](po_number, delivery_number)
@@ -143,9 +143,17 @@ def process_pdf(pdf_path):
                     else:
                         fallback_name = customer_mapping[customer]("", "").strip()
                         output_filename = f"{fallback_name}_{page_number + 1}"
+
                 saved = save_page_as_pdf(pdf_path, page_number, output_filename)
                 if saved:
                     saved_files.append(saved)
+            else:
+                # Save unreadable or unrecognized pages
+                output_filename = f"Unread_{page_number + 1}"
+                saved = save_page_as_pdf(pdf_path, page_number, output_filename)
+                if saved:
+                    saved_files.append(saved)
+
         doc.close()
     except Exception as e:
         logging.error(f"Error processing PDF: {e}")
@@ -158,7 +166,6 @@ def login():
     if request.method == 'POST':
         password = request.form.get('password')
         if password == UPLOAD_PASSWORD:
-            # Set a flag and record login time
             session['authenticated'] = True
             session['login_time'] = datetime.utcnow().isoformat()
             return redirect(url_for('upload_file'))
@@ -178,7 +185,6 @@ def is_session_valid():
 
 @app.route('/', methods=['GET', 'POST'])
 def upload_file():
-    # Require a valid session on every request
     if not is_session_valid():
         session.clear()
         return redirect(url_for('login'))
@@ -195,18 +201,15 @@ def upload_file():
             file_path = os.path.join(UPLOAD_FOLDER, file.filename)
             file.save(file_path)
             saved_files = process_pdf(file_path)
-            # Store the list of files from the current upload in the session
             session['saved_files'] = saved_files
             session['login_time'] = datetime.utcnow().isoformat()
             return render_template('download.html', saved_files=saved_files) if saved_files else redirect(url_for('upload_file'))
-    # On GET requests, simply render the upload page without clearing the session.
     return render_template('upload.html')
 
 @app.route('/download/<path:filename>')
 def download_file(filename):
     return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
 
-# Updated download_all route to only include files from the current upload session
 @app.route('/download_all')
 def download_all():
     saved_files = session.get('saved_files', [])
@@ -217,7 +220,6 @@ def download_all():
     zip_filename = "processed_files.zip"
     zip_path = os.path.join(OUTPUT_FOLDER, zip_filename)
     
-    # Create the zip file with only the current session's files
     with zipfile.ZipFile(zip_path, 'w') as zipf:
         for file_name in saved_files:
             file_path = os.path.join(OUTPUT_FOLDER, file_name)
