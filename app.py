@@ -22,9 +22,7 @@ app.secret_key = 'secret-key'
 # --- Debug Endpoint ---
 @app.route('/debug-tesseract')
 def debug_tesseract():
-    # Get PATH environment variable
     env_path = os.getenv("PATH", "Not set")
-    # Try to locate tesseract using the shell command
     try:
         tesseract_path = subprocess.check_output(["which", "tesseract"]).decode().strip()
     except Exception as e:
@@ -72,16 +70,22 @@ def extract_po_delivery(text, customer):
         raw = delivery_match.group(1)
         delivery_number = re.sub(r'\s+', '', raw)
     else:
-        manual_delivery_match = re.search(
-            r'(\d{8})[-]?(\d+)([A-Za-z]{1,2})\b',
-            text
-        )
-        if manual_delivery_match:
-            date_part = manual_delivery_match.group(1)
-            sequence = manual_delivery_match.group(2)
-            initials = manual_delivery_match.group(3).upper()
-            delivery_number = f"{date_part}-{sequence}{initials}"
-            logging.info(f"Found manual delivery number: {delivery_number}")
+        # Then try delivery numbers starting with 10
+        delivery_match_10 = re.search(r'(10(?:\s*\d){6})', text)
+        if delivery_match_10:
+            raw = delivery_match_10.group(1)
+            delivery_number = re.sub(r'\s+', '', raw)
+        else:
+            manual_delivery_match = re.search(
+                r'(\d{8})[-]?(\d+)([A-Za-z]{1,2})\b',
+                text
+            )
+            if manual_delivery_match:
+                date_part = manual_delivery_match.group(1)
+                sequence = manual_delivery_match.group(2)
+                initials = manual_delivery_match.group(3).upper()
+                delivery_number = f"{date_part}-{sequence}{initials}"
+                logging.info(f"Found manual delivery number: {delivery_number}")
 
     return po_number, delivery_number
 
@@ -150,7 +154,7 @@ def process_pdf(pdf_path):
         logging.error(f"Error processing PDF: {e}")
     return saved_files
 
-# ------------------ Authentication Changes ------------------
+# ------------------ Authentication ------------------
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -165,7 +169,6 @@ def login():
     return render_template('login.html')
 
 def is_session_valid():
-    """Check if the current session is authenticated and not older than 15 minutes."""
     login_time_str = session.get('login_time')
     if not session.get('authenticated') or not login_time_str:
         return False
@@ -210,14 +213,15 @@ def download_all():
 
     zip_filename = "processed_files.zip"
     zip_path = os.path.join(OUTPUT_FOLDER, zip_filename)
-    
+
     with zipfile.ZipFile(zip_path, 'w') as zipf:
         for file_name in saved_files:
             file_path = os.path.join(OUTPUT_FOLDER, file_name)
             if os.path.exists(file_path):
                 zipf.write(file_path, file_name)
-    
+
     return send_file(zip_path, as_attachment=True)
 
 if __name__ == '__main__':
     app.run(debug=True)
+
