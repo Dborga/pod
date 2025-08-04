@@ -64,28 +64,22 @@ def extract_po_delivery(text, customer):
                 po_number = re.sub(r'\s+', '', raw)
 
     delivery_number = None
-    # First try standard delivery numbers (starting with 9)
-    delivery_match = re.search(r'(9(?:\s*\d){6})', text)
-    if delivery_match:
-        raw = delivery_match.group(1)
+    # Try delivery numbers starting with 10
+    delivery_match_10 = re.search(r'(10(?:\s*\d){6})', text)
+    if delivery_match_10:
+        raw = delivery_match_10.group(1)
         delivery_number = re.sub(r'\s+', '', raw)
     else:
-        # Then try delivery numbers starting with 10
-        delivery_match_10 = re.search(r'(10(?:\s*\d){6})', text)
-        if delivery_match_10:
-            raw = delivery_match_10.group(1)
-            delivery_number = re.sub(r'\s+', '', raw)
-        else:
-            manual_delivery_match = re.search(
-                r'(\d{8})[-]?(\d+)([A-Za-z]{1,2})\b',
-                text
-            )
-            if manual_delivery_match:
-                date_part = manual_delivery_match.group(1)
-                sequence = manual_delivery_match.group(2)
-                initials = manual_delivery_match.group(3).upper()
-                delivery_number = f"{date_part}-{sequence}{initials}"
-                logging.info(f"Found manual delivery number: {delivery_number}")
+        manual_delivery_match = re.search(
+            r'(\d{8})[-]?(\d+)([A-Za-z]{1,2})\b',
+            text
+        )
+        if manual_delivery_match:
+            date_part = manual_delivery_match.group(1)
+            sequence = manual_delivery_match.group(2)
+            initials = manual_delivery_match.group(3).upper()
+            delivery_number = f"{date_part}-{sequence}{initials}"
+            logging.info(f"Found manual delivery number: {delivery_number}")
 
     return po_number, delivery_number
 
@@ -224,4 +218,5 @@ def download_all():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
