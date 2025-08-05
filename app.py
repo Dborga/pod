@@ -53,23 +53,22 @@ customer_mapping = {
 def extract_po_delivery(text, customer):
     po_number = None
     if customer == "crevier lubricants inc":
-        po_match = re.search(r'PO\s*[:#]?\s*([5](?:\s*\d){5,})', text, re.IGNORECASE)
+        po_match = re.search(r'PO\s*[:#]?\s*(5\d{5})', text, re.IGNORECASE)
         if po_match:
-            raw = po_match.group(1)
-            po_number = re.sub(r'\s+', '', raw)
+            po_number = po_match.group(1)
         else:
-            po_match = re.search(r'\b(5(?:\s*\d){5})\b', text)
+            po_match = re.search(r'\b(5\d{5})\b', text)
             if po_match:
-                raw = po_match.group(1)
-                po_number = re.sub(r'\s+', '', raw)
+                po_number = po_match.group(1)
 
     delivery_number = None
-    # Try delivery numbers starting with 10
-    delivery_match_10 = re.search(r'(10(?:\s*\d){6})', text)
-    if delivery_match_10:
-        raw = delivery_match_10.group(1)
-        delivery_number = re.sub(r'\s+', '', raw)
+    # Space-tolerant delivery number detection (1 followed by 7 digits, spaces allowed)
+    delivery_match = re.search(r'1\s*\d\s*\d\s*\d\s*\d\s*\d\s*\d\s*\d\s*\d', text)
+    if delivery_match:
+        raw = re.sub(r'\s+', '', delivery_match.group())
+        delivery_number = raw
     else:
+        # Manual format fallback (e.g., 07282025-3DB)
         manual_delivery_match = re.search(
             r'(\d{8})[-]?(\d+)([A-Za-z]{1,2})\b',
             text
@@ -80,6 +79,11 @@ def extract_po_delivery(text, customer):
             initials = manual_delivery_match.group(3).upper()
             delivery_number = f"{date_part}-{sequence}{initials}"
             logging.info(f"Found manual delivery number: {delivery_number}")
+
+    # --- NEW: Trim extra digits if more than 8 and starts with 1 ---
+    if delivery_number and delivery_number.isdigit() and delivery_number.startswith("1") and len(delivery_number) > 8:
+        logging.info(f"Trimming delivery number {delivery_number} to first 8 digits.")
+        delivery_number = delivery_number[:8]
 
     return po_number, delivery_number
 
@@ -126,9 +130,21 @@ def process_pdf(pdf_path):
             text = page.get_text()
             if not text.strip() or len(text.strip()) < 20:
                 text = perform_ocr(page)
+
+            # Debug: Log raw text
+            logging.info(f"--- PAGE {page_number + 1} RAW TEXT START ---")
+            logging.info(text)
+            logging.info(f"--- PAGE {page_number + 1} RAW TEXT END ---")
+
             customer = detect_customer(text)
             if customer:
                 po_number, delivery_number = extract_po_delivery(text, customer)
+
+                # Debug: Log detection
+                logging.info(f"PAGE {page_number + 1} - Customer: {customer}")
+                logging.info(f"PAGE {page_number + 1} - Detected PO: {po_number}")
+                logging.info(f"PAGE {page_number + 1} - Detected Delivery: {delivery_number}")
+
                 if customer == "crevier lubricants inc":
                     if po_number and delivery_number:
                         output_filename = customer_mapping[customer](po_number, delivery_number)
@@ -218,5 +234,3 @@ def download_all():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-
