@@ -11,6 +11,7 @@
             justify-content: center;
             gap: 20px;
             margin-top: 30px;
+            flex-wrap: wrap;
         }
 
         /* Styled Buttons */
@@ -44,6 +45,15 @@
         .button-secondary:hover {
             background-color: #1e7e34;
         }
+
+        /* Purple Button (Smartsheet Match) */
+        .button-purple {
+            background-color: #6f42c1; /* Purple */
+        }
+
+        .button-purple:hover {
+            background-color: #563d7c;
+        }
     </style>
 </head>
 <body>
@@ -63,6 +73,9 @@
         <div class="button-container">
             <a class="button" href="{{ url_for('download_all') }}">Download All</a>
             <a class="button button-secondary" href="{{ url_for('upload_file') }}">Upload Another File</a>
+            <form action="{{ url_for('smartsheet_match') }}" method="post" style="display:inline;">
+                <button type="submit" class="button button-purple">Look for Matching Delivery Numbers</button>
+            </form>
         </div>
     </main>
 
@@ -71,3 +84,4 @@
     </footer>
 </body>
 </html>
+
