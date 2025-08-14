@@ -2,3 +2,12 @@
 credentials.json
 token.json
 get_workspaces.pytoken copy.json
+.env
+token*.json
+credentials*.json
+client_secret*.json
+*.pem
+.DS_Store
+__pycache__/
+venv/
+.venv/
