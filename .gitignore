@@ -11,3 +11,4 @@ client_secret*.json
 __pycache__/
 venv/
 .venv/
+email_attachments/
