@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Download Processed Pages</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* Button Container */
+        .button-container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+
+        /* Styled Buttons */
+        .button {
+            display: inline-block;
+            padding: 15px 25px;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            text-decoration: none;
+            color: white;
+            background-color: #007BFF; /* Blue */
+            border-radius: 8px;
+            transition: 0.3s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            border: none;
+        }
+
+        /* Hover Effect */
+        .button:hover {
+            background-color: #0056b3;
+            transform: translateY(-2px);
+        }
+
+        /* Secondary Button (Upload Another File) */
+        .button-secondary {
+            background-color: #28a745; /* Green */
+        }
+
+        .button-secondary:hover {
+            background-color: #1e7e34;
+        }
+
+        /* Purple Button (Smartsheet Match) */
+        .button-purple {
+            background-color: #6f42c1; /* Purple */
+        }
+
+        .button-purple:hover {
+            background-color: #563d7c;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="logo">
+        <h1>Download Processed Pages</h1>
+    </header>
+
+    <main>
+        <ul class="download-list">
+            {% for fname in saved_files %}
+                <li><a href="{{ url_for('download_file', filename=fname) }}">{{ fname }}</a></li>
+            {% endfor %}
+        </ul>
+
+        <!-- Button Section -->
+        <div class="button-container">
+            <a class="button" href="{{ url_for('download_all') }}">Download All</a>
+            <a class="button button-secondary" href="{{ url_for('upload_file') }}">Upload Another File</a>
+            <form action="{{ url_for('smartsheet_match') }}" method="post" style="display:inline;">
+                <button type="submit" class="button button-purple">Look for Matching Delivery Numbers</button>
+            </form>
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; {{ current_year() if current_year is defined else "2025" }} Mansfield Energy</p>
+    </footer>
+</body>
+</html>
+

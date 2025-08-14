@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Smartsheet Delivery Matches</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    header { display:flex; align-items:center; gap:12px; padding:16px 0; }
+    .logo { height:42px; }
+    h1 { margin:0; font-size:24px; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 16px 48px; }
+    .flash { background:#fff3cd; color:#664d03; border:1px solid #ffecb5; padding:10px 12px; border-radius:8px; margin: 12px 0; }
+    .actions { display:flex; gap:12px; flex-wrap:wrap; margin: 18px 0 8px; }
+    .btn {
+      display:inline-block; padding:10px 16px; border:none; border-radius:8px;
+      font-weight:600; color:white; background:#0d6efd; cursor:pointer;
+      text-decoration:none; box-shadow: 0 2px 5px rgba(0,0,0,.08); transition: transform .05s ease;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn.secondary { background:#198754; }
+    .btn.purple { background:#6f42c1; }
+    .btn.gray { background:#6c757d; }
+    .muted { color:#6c757d; }
+    .table-wrap { overflow:auto; border:1px solid #e9ecef; border-radius:10px; }
+    table { width:100%; border-collapse:collapse; min-width:720px; }
+    thead th { position:sticky; top:0; background:#f8f9fa; text-align:left; font-size:14px; color:#495057; }
+    th, td { padding:12px 14px; border-bottom:1px solid #e9ecef; }
+    tbody tr:hover { background:#f8f9fb; }
+    code { background:#f1f3f5; padding:2px 6px; border-radius:6px; }
+    footer { margin-top:32px; color:#6c757d; font-size:13px; }
+    .empty {
+      background:#f8f9fa; border:1px dashed #ced4da; padding:24px; border-radius:10px;
+      text-align:center; color:#495057; margin-top:16px;
+    }
+    .row-actions { display:flex; gap:10px; align-items:center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="logo">
+      <h1>Smartsheet Delivery Matches</h1>
+    </header>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for msg in messages %}
+          <div class="flash">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="actions">
+      <a class="btn secondary" href="{{ url_for('upload_file') }}">Back to Upload</a>
+
+      <!-- Re-scan Smartsheet (POST) -->
+      <form action="{{ url_for('smartsheet_match') }}" method="post" style="display:inline;">
+        <button type="submit" class="btn purple">Re-scan Smartsheet for Matches</button>
+      </form>
+
+      {% if matches and matches|length > 0 %}
+        <!-- Upload all matches -->
+        <form action="{{ url_for('upload_all_matches') }}" method="post" style="display:inline;">
+          <button type="submit" class="btn">Upload All Matches</button>
+        </form>
+      {% endif %}
+    </div>
+
+    {% if matches and matches|length > 0 %}
+      <p class="muted">
+        Found <strong>{{ matches|length }}</strong> matching delivery number{{ 's' if matches|length != 1 else '' }}
+        in your <strong>Test PODS</strong> workspace.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Delivery #</th>
+              <th>Saved File</th>
+              <th>Sheet (Month)</th>
+              <th>Row ID</th>
+              <th>Upload POD to Row</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in matches %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td><code>{{ m.delivery_number }}</code></td>
+                <td><a href="{{ url_for('download_file', filename=m.file) }}">{{ m.file }}</a></td>
+                <td>{{ m.sheet_name }}</td>
+                <td>{{ m.row_id }}</td>
+                <td>
+                  <div class="row-actions">
+                    <form action="{{ url_for('upload_match', sheet_id=m.sheet_id, row_id=m.row_id, filename=m.file) }}"
+                          method="post" style="display:inline;">
+                      <button type="submit" class="btn gray">Upload POD</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <p class="muted" style="margin-top:10px;">
+        Tip: ensure your sheet’s <strong>Delivery #</strong> column title matches exactly.
+      </p>
+    {% else %}
+      <div class="empty">
+        <strong>No matches found.</strong><br>
+        Confirm month sheets (e.g., <em>Aug 2025</em> or <em>August 2025</em>) exist in
+        <strong>Test PODS</strong> and the <em>Delivery #</em> values match the filenames’ delivery numbers.
+      </div>
+    {% endif %}
+
+    <footer>
+      &copy; {{ current_year() if current_year is defined else "2025" }} Mansfield Energy
+    </footer>
+  </div>
+</body>
+</html>
