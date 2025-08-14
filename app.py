@@ -454,23 +454,81 @@ def upload_file_by_delivery(file_path: str):
 # ===================== Gmail: service, message processing, PROGRESS =====================
 
 def gmail_service():
-    """
-    Build an authenticated Gmail service using credentials.json and token.json.
-    On first run, opens a browser window to authorize access.
-    """
+    """Get Gmail service using OAuth2."""
     creds = None
-    if os.path.exists(GMAIL_TOKEN_FILE):
+    
+    # First try to load from environment variables (for production)
+    if os.getenv('GMAIL_TOKEN_JSON'):
+        try:
+            import json
+            token_data = json.loads(os.getenv('GMAIL_TOKEN_JSON'))
+            creds = Credentials.from_authorized_user_info(token_data, GMAIL_SCOPES)
+            logging.info("Loaded Gmail credentials from environment variable")
+        except Exception as e:
+            logging.error(f"Error loading credentials from environment: {e}")
+    
+    # Fallback to token file (for local development)
+    elif os.path.exists(GMAIL_TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(GMAIL_TOKEN_FILE, GMAIL_SCOPES)
+        logging.info(f"Loaded Gmail credentials from {GMAIL_TOKEN_FILE}")
+    
+    # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists(GMAIL_CREDENTIALS_FILE):
-                raise RuntimeError("Gmail credentials.json not found; place it next to app.py or set GMAIL_CREDENTIALS_FILE")
-            flow = InstalledAppFlow.from_client_secrets_file(GMAIL_CREDENTIALS_FILE, GMAIL_SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(GMAIL_TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
+            try:
+                creds.refresh(Request())
+                logging.info("Refreshed Gmail credentials")
+                
+                # For local development, save refreshed token back to file
+                if not os.getenv('GMAIL_TOKEN_JSON') and os.path.exists(os.path.dirname(GMAIL_TOKEN_FILE) if os.path.dirname(GMAIL_TOKEN_FILE) else '.'):
+                    try:
+                        with open(GMAIL_TOKEN_FILE, 'w') as token:
+                            token.write(creds.to_json())
+                        logging.info("Saved refreshed token to file")
+                    except Exception as e:
+                        logging.error(f"Could not save refreshed token: {e}")
+                        
+            except Exception as e:
+                logging.error(f"Error refreshing credentials: {e}")
+                creds = None
+        
+        if not creds or not creds.valid:
+            # Try to load credentials.json from environment variable for initial auth
+            if os.getenv('GMAIL_CREDENTIALS_JSON'):
+                try:
+                    import json
+                    import tempfile
+                    credentials_data = json.loads(os.getenv('GMAIL_CREDENTIALS_JSON'))
+                    
+                    # Create a temporary file for the flow
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_creds:
+                        json.dump(credentials_data, temp_creds)
+                        temp_creds_path = temp_creds.name
+                    
+                    flow = InstalledAppFlow.from_client_secrets_file(temp_creds_path, GMAIL_SCOPES)
+                    # In production, we can't run local server, so this will fail
+                    # The token should already be provided via GMAIL_TOKEN_JSON
+                    logging.error("Cannot perform interactive auth in production environment")
+                    
+                    # Clean up temp file
+                    os.unlink(temp_creds_path)
+                    raise RuntimeError("Gmail token expired and cannot refresh in production")
+                    
+                except Exception as e:
+                    logging.error(f"Error with credentials from environment: {e}")
+                    raise RuntimeError("Gmail credentials setup failed in production")
+                    
+            elif os.path.exists(GMAIL_CREDENTIALS_FILE):
+                # Local development - can do interactive auth
+                flow = InstalledAppFlow.from_client_secrets_file(GMAIL_CREDENTIALS_FILE, GMAIL_SCOPES)
+                creds = flow.run_local_server(port=0)
+                
+                # Save the credentials for the next run
+                with open(GMAIL_TOKEN_FILE, 'w') as token:
+                    token.write(creds.to_json())
+            else:
+                raise RuntimeError("Gmail credentials not found. Set GMAIL_TOKEN_JSON and GMAIL_CREDENTIALS_JSON environment variables for production.")
+
     return build('gmail', 'v1', credentials=creds)
 
 def _iter_parts(payload):
