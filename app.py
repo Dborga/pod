@@ -13,6 +13,7 @@ import zipfile
 import subprocess
 import base64
 from werkzeug.utils import secure_filename
+from flask import Response, session, stream_with_context, jsonify
 
 # Async + progress
 from threading import Thread, Lock
@@ -770,43 +771,38 @@ def upload_match(sheet_id, row_id, filename):
 @app.route('/upload_all_matches', methods=['POST'])
 def upload_all_matches():
     """
-    Upload every matched file in session['matches'] to its corresponding row.
+    Uploads all matching PODs to their respective Smartsheet rows.
+    Streams real-time progress updates as JSON lines for frontend progress bar.
     """
     if not ss_client:
         flash("Smartsheet is not configured. Set SMARTSHEET_API in your .env.")
         return redirect(url_for('smartsheet_match'))
 
-    matches = session.get('matches', []) or []
-    if not matches:
-        flash("No matches to upload.")
-        return redirect(url_for('smartsheet_match'))
+    matches = session.get('matches', [])
+    total = len(matches)
 
-    successes = 0
-    failures = 0
-    for m in matches:
-        filename = m.get('file')
-        sheet_id = m.get('sheet_id')
-        row_id = m.get('row_id')
-        file_path = os.path.join(OUTPUT_FOLDER, filename)
+    def generate():
+        uploaded = 0
+        for m in matches:
+            file_path = os.path.join(OUTPUT_FOLDER, m["file"])
+            if not os.path.exists(file_path):
+                logging.warning(f"File not found: {m['file']}")
+                continue
+            try:
+                with open(file_path, 'rb') as fh:
+                    ss_client.Attachments.attach_file_to_row(
+                        int(m["sheet_id"]),
+                        int(m["row_id"]),
+                        (m["file"], fh, 'application/pdf')
+                    )
+                uploaded += 1
+                logging.info(f"Uploaded {m['file']} to Smartsheet (sheet {m['sheet_id']}, row {m['row_id']})")
+            except Exception as e:
+                logging.exception(f"Smartsheet upload failed for {m['file']}: {e}")
+                continue
+            yield f'{{"progress": {uploaded}, "total": {total}}}\n'
 
-        if not (filename and sheet_id and row_id and os.path.exists(file_path)):
-            failures += 1
-            continue
-
-        try:
-            with open(file_path, 'rb') as fh:
-                ss_client.Attachments.attach_file_to_row(
-                    int(sheet_id),
-                    int(row_id),
-                    (filename, fh, 'application/pdf')
-                )
-            successes += 1
-        except Exception as e:
-            logging.exception(f"Smartsheet upload failed for {filename}")
-            failures += 1
-
-    flash(f"Upload complete: {successes} succeeded, {failures} failed.")
-    return redirect(url_for('smartsheet_match'))
+    return Response(stream_with_context(generate()), mimetype='text/plain')
 
 # ============================================================================
 
