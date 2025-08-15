@@ -3,38 +3,84 @@
 <head>
   <meta charset="utf-8">
   <title>Smartsheet Delivery Matches</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-    header { display:flex; align-items:center; gap:12px; padding:16px 0; }
-    .logo { height:42px; }
-    h1 { margin:0; font-size:24px; }
-    .container { max-width: 1100px; margin: 0 auto; padding: 0 16px 48px; }
-    .flash { background:#fff3cd; color:#664d03; border:1px solid #ffecb5; padding:10px 12px; border-radius:8px; margin: 12px 0; }
-    .actions { display:flex; gap:12px; flex-wrap:wrap; margin: 18px 0 8px; }
-    .btn {
-      display:inline-block; padding:10px 16px; border:none; border-radius:8px;
-      font-weight:600; color:white; background:#0d6efd; cursor:pointer;
-      text-decoration:none; box-shadow: 0 2px 5px rgba(0,0,0,.08); transition: transform .05s ease;
-    }
-    .btn:hover { transform: translateY(-1px); }
-    .btn.secondary { background:#198754; }
+    .container { max-width:900px; margin:40px auto 0; background:#fff; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.08); padding:32px 30px 20px; }
+    header { text-align:center; margin-bottom:20px; }
+    .logo { max-height:60px; margin-bottom:10px; }
+    h1 { font-size:2em; color:#233; margin-top:0; }
+    .flash { background:#eaf6e7; color:#197c3c; border:1px solid #b7e1b1; border-radius:6px; padding:12px 16px; margin-bottom:18px; text-align:center; }
+    .actions { display:flex; gap:18px; margin-bottom:18px; align-items:center; }
+    .btn { display:inline-block; font-size:15px; font-weight:600; color:#fff; background:#007BFF; border:none; border-radius:7px; padding:11px 22px; cursor:pointer; text-decoration:none; box-shadow:0 2px 7px rgba(0,0,0,0.07); transition:.2s; }
+    .btn:hover { background:#0056b3; }
+    .btn.secondary { background:#28a745; }
+    .btn.secondary:hover { background:#1e7e34; }
     .btn.purple { background:#6f42c1; }
-    .btn.gray { background:#6c757d; }
-    .muted { color:#6c757d; }
-    .table-wrap { overflow:auto; border:1px solid #e9ecef; border-radius:10px; }
-    table { width:100%; border-collapse:collapse; min-width:720px; }
-    thead th { position:sticky; top:0; background:#f8f9fa; text-align:left; font-size:14px; color:#495057; }
-    th, td { padding:12px 14px; border-bottom:1px solid #e9ecef; }
-    tbody tr:hover { background:#f8f9fb; }
-    code { background:#f1f3f5; padding:2px 6px; border-radius:6px; }
-    footer { margin-top:32px; color:#6c757d; font-size:13px; }
-    .empty {
-      background:#f8f9fa; border:1px dashed #ced4da; padding:24px; border-radius:10px;
-      text-align:center; color:#495057; margin-top:16px;
-    }
+    .btn.purple:hover { background:#563d7c; }
+    .btn.gray { background:#888; }
+    .btn.gray:hover { background:#232323; }
+    .muted { color:#666; font-size:1em; }
+    .empty { background:#f8f8fc; color:#888; border:1px solid #ddd; border-radius:7px; padding:24px 18px; text-align:center; margin-top:32px; }
+    .table-wrap { overflow-x:auto; margin-top:20px; }
+    table { border-collapse:collapse; width:100%; background:#fff; }
+    th, td { text-align:left; padding:10px 12px; border-bottom:1px solid #eee; }
+    th { background:#f6f6fa; color:#232323; font-weight:600; }
+    td code { background:#f5f2ff; color:#6337b7; border-radius:4px; padding:2px 7px; font-size:.98em; }
     .row-actions { display:flex; gap:10px; align-items:center; }
+
+    /* Modal/Progress Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      z-index: 2000;
+      left: 0;
+      top: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0,0,0,0.45);
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal-content {
+      background: #fff;
+      padding: 40px 30px;
+      border-radius: 12px;
+      text-align: center;
+      box-shadow: 0 6px 32px rgba(0,0,0,0.20);
+      min-width: 300px;
+    }
+    .progress-label {
+      font-size: 1.2em;
+      margin-bottom: 18px;
+      font-weight: 500;
+      color: #333;
+    }
+    .progress-bar-bg {
+      width: 100%;
+      background: #e0e0e0;
+      border-radius: 8px;
+      height: 26px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      background: linear-gradient(90deg, #6f42c1, #007BFF 90%);
+      height: 100%;
+      width: 0%;
+      border-radius: 8px 0 0 8px;
+      transition: width 0.2s;
+    }
+    .progress-percent {
+      font-size: 1em;
+      color: #6f42c1;
+      font-weight: bold;
+    }
+    body.modal-active {
+      overflow: hidden;
+    }
   </style>
 </head>
 <body>
@@ -61,10 +107,8 @@
       </form>
 
       {% if matches and matches|length > 0 %}
-        <!-- Upload all matches -->
-        <form action="{{ url_for('upload_all_matches') }}" method="post" style="display:inline;">
-          <button type="submit" class="btn">Upload All Matches</button>
-        </form>
+        <!-- Upload all matches with AJAX/progress -->
+        <button type="button" class="btn" id="upload-all-matches-btn">Upload All Matches</button>
       {% endif %}
     </div>
 
@@ -120,8 +164,93 @@
     {% endif %}
 
     <footer>
-      &copy; {{ current_year() if current_year is defined else "2025" }} Mansfield Energy
+      <p style="color:#bbb; font-size:0.98em; text-align:center; margin-top:38px;">&copy; {{ current_year() if current_year is defined else "2025" }} Mansfield Energy</p>
     </footer>
   </div>
+
+  <!-- Loading Modal -->
+  <div class="modal-overlay" id="upload-progress-modal">
+    <div class="modal-content">
+      <div class="progress-label">Uploading All Matches...</div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="upload-progress-bar"></div>
+      </div>
+      <div class="progress-percent" id="upload-progress-percent">0%</div>
+      <div style="font-size:0.9em; color:#888; margin-top:10px;">
+        Please wait while all matches are being uploaded.
+      </div>
+    </div>
+  </div>
+
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const btn = document.getElementById('upload-all-matches-btn');
+    const modal = document.getElementById('upload-progress-modal');
+    const bar = document.getElementById('upload-progress-bar');
+    const percent = document.getElementById('upload-progress-percent');
+
+    if (btn) {
+      btn.addEventListener("click", function () {
+        // Show modal
+        modal.classList.add("active");
+        document.body.classList.add('modal-active');
+        bar.style.width = "0%";
+        percent.textContent = "0%";
+
+        // Start AJAX upload (uses Fetch and ReadableStream for server-sent progress)
+        fetch("{{ url_for('upload_all_matches') }}", {
+          method: "POST",
+          headers: {
+            "X-Requested-With": "XMLHttpRequest"
+          }
+        })
+        .then(response => {
+          if (!response.body) throw new Error("No response body for progress stream.");
+          const reader = response.body.getReader();
+          let received = "";
+          function read() {
+            return reader.read().then(({ done, value }) => {
+              if (done) {
+                // Done, set 100%
+                bar.style.width = "100%";
+                percent.textContent = "100%";
+                setTimeout(() => {
+                  modal.classList.remove("active");
+                  document.body.classList.remove('modal-active');
+                  // Optionally reload or show a message
+                  window.location.reload();
+                }, 600);
+                return;
+              }
+              // Progress chunk
+              received += new TextDecoder().decode(value);
+              // Each progress update is delimited by newline
+              let lines = received.split("\n");
+              received = lines.pop();
+              lines.forEach(line => {
+                if (!line.trim()) return;
+                try {
+                  const data = JSON.parse(line);
+                  if (data.progress !== undefined && data.total !== undefined) {
+                    let pct = Math.round((data.progress / data.total) * 100);
+                    bar.style.width = pct + "%";
+                    percent.textContent = pct + "%";
+                  }
+                } catch (err) {}
+              });
+              return read();
+            });
+          }
+          return read();
+        })
+        .catch(err => {
+          modal.classList.remove("active");
+          document.body.classList.remove('modal-active');
+          alert("Upload failed: " + err);
+        });
+      });
+    }
+  });
+  </script>
 </body>
 </html>
