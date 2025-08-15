@@ -54,6 +54,61 @@
         .button-purple:hover {
             background-color: #563d7c;
         }
+
+        /* Loading Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.45);
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-content {
+            background: #fff;
+            padding: 40px 30px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 6px 32px rgba(0,0,0,0.20);
+            min-width: 300px;
+        }
+        .progress-label {
+            font-size: 1.2em;
+            margin-bottom: 18px;
+            font-weight: 500;
+            color: #333;
+        }
+        .progress-bar-bg {
+            width: 100%;
+            background: #e0e0e0;
+            border-radius: 8px;
+            height: 26px;
+            margin-bottom: 12px;
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            background: linear-gradient(90deg, #6f42c1, #007BFF 90%);
+            height: 100%;
+            width: 0%;
+            border-radius: 8px 0 0 8px;
+            transition: width 0.2s;
+        }
+        .progress-percent {
+            font-size: 1em;
+            color: #6f42c1;
+            font-weight: bold;
+        }
+        /* Prevent scroll when modal is active */
+        body.modal-active {
+            overflow: hidden;
+        }
     </style>
 </head>
 <body>
@@ -73,15 +128,81 @@
         <div class="button-container">
             <a class="button" href="{{ url_for('download_all') }}">Download All</a>
             <a class="button button-secondary" href="{{ url_for('upload_file') }}">Upload Another File</a>
-            <form action="{{ url_for('smartsheet_match') }}" method="post" style="display:inline;">
+            <form id="smartsheet-form" action="{{ url_for('smartsheet_match') }}" method="post" style="display:inline;">
                 <button type="submit" class="button button-purple">Look for Matching Delivery Numbers</button>
             </form>
         </div>
     </main>
 
+    <!-- Loading Modal -->
+    <div class="modal-overlay" id="loading-modal">
+        <div class="modal-content">
+            <div class="progress-label">Looking for Matching Delivery Numbers...</div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progress-bar"></div>
+            </div>
+            <div class="progress-percent" id="progress-percent">0%</div>
+            <div style="font-size:0.9em; color:#888; margin-top:10px;">
+                Please wait while we process your request.
+            </div>
+        </div>
+    </div>
+
     <footer>
         <p>&copy; {{ current_year() if current_year is defined else "2025" }} Mansfield Energy</p>
     </footer>
+
+    <script>
+        // Loading modal/progress for Smartsheet Match
+        const form = document.getElementById('smartsheet-form');
+        const modal = document.getElementById('loading-modal');
+        const progressBar = document.getElementById('progress-bar');
+        const progressPercent = document.getElementById('progress-percent');
+        let progress = 0;
+        let interval;
+
+        form.addEventListener('submit', function(e) {
+            // Show modal and start progress animation
+            modal.classList.add('active');
+            document.body.classList.add('modal-active');
+            progress = 0;
+            progressBar.style.width = '0%';
+            progressPercent.textContent = '0%';
+
+            // Simulate progress up to 85% before submit
+            interval = setInterval(() => {
+                if (progress < 85) {
+                    progress += Math.random() * 3 + 2; // Random increment
+                    if (progress > 85) progress = 85;
+                    progressBar.style.width = progress + '%';
+                    progressPercent.textContent = Math.floor(progress) + '%';
+                }
+            }, 70);
+
+            // Give user a brief moment to see the animation before submitting
+            setTimeout(() => {
+                clearInterval(interval);
+                progressBar.style.width = '85%';
+                progressPercent.textContent = '85%';
+                // Now submit the form for real
+                form.submit();
+            }, 1000); // 1 second delay before real submission
+
+            // Prevent default to show loading/progress first
+            e.preventDefault();
+        });
+
+        // Optionally, on page load (after backend responds), complete the progress bar
+        window.addEventListener('pageshow', function() {
+            if (modal.classList.contains('active')) {
+                progressBar.style.width = '100%';
+                progressPercent.textContent = '100%';
+                setTimeout(() => {
+                    modal.classList.remove('active');
+                    document.body.classList.remove('modal-active');
+                }, 400);
+            }
+        });
+    </script>
 </body>
 </html>
-
