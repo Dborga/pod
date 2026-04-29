@@ -1,9 +1,9 @@
 # Use an official Python image as base
 FROM python:3.11-slim
 
-# Install system dependencies (Tesseract OCR and curl)
+# Install system dependencies (Tesseract OCR, curl, and git)
 RUN apt-get update && \
-    apt-get install -y tesseract-ocr tesseract-ocr-eng libtesseract-dev curl && \
+    apt-get install -y tesseract-ocr tesseract-ocr-eng libtesseract-dev curl git && \
     rm -rf /var/lib/apt/lists/* && \
     which tesseract && tesseract --version
 

@@ -13,6 +13,7 @@ import zipfile
 import subprocess
 import base64
 from werkzeug.utils import secure_filename
+from flask import Response, session, stream_with_context, jsonify
 
 # Async + progress
 from threading import Thread, Lock
@@ -64,17 +65,18 @@ SMARTSHEET_TOKEN = os.getenv("SMARTSHEET_API")  # set in .env
 # Gmail config
 INBOUND_ATTACH_DIR = os.getenv("INBOUND_ATTACH_DIR", "email_attachments")
 os.makedirs(INBOUND_ATTACH_DIR, exist_ok=True)
-# TIP: to also process read messages, set GMAIL_QUERY=has:attachment newer_than:7d in .env
-GMAIL_QUERY = os.getenv("GMAIL_QUERY", "has:attachment is:unread")
+# Process all emails with attachments from the last 7 days (configurable via env)
+GMAIL_QUERY = os.getenv("GMAIL_QUERY", "has:attachment newer_than:7d")
 GMAIL_CREDENTIALS_FILE = os.getenv("GMAIL_CREDENTIALS_FILE", "credentials.json")
 GMAIL_TOKEN_FILE = os.getenv("GMAIL_TOKEN_FILE", "token.json")
-# If you don't want the app to mark messages read, switch to gmail.readonly and comment mark-read block
-GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+# Use readonly scope since we're not marking messages as read anymore
+GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
 # ======== Customer mapping / PDF processing ========
 
 customer_mapping = {
     "crevier lubricants inc": lambda po, d: f"Crevier {po}.{d}",
+    "catalys lubricants inc": lambda po, d: f"Catalys {po}.{d}",
     "parkland fuel corporation": lambda _, d: f"Parkland {d}",
     "catalina": lambda _, d: f"Catalina {d}",
     "econo gas": lambda _, d: f"Econogas {d}",
@@ -88,7 +90,7 @@ customer_mapping = {
 
 def extract_po_delivery(text, customer):
     po_number = None
-    if customer == "crevier lubricants inc":
+    if customer in {"crevier lubricants inc", "catalys lubricants inc"}:
         po_match = re.search(r'PO\s*[:#]?\s*(5\d{5})', text, re.IGNORECASE)
         if po_match:
             po_number = po_match.group(1)
@@ -179,11 +181,12 @@ def process_pdf(pdf_path):
                 logging.info(f"PAGE {page_number + 1} - Detected PO: {po_number}")
                 logging.info(f"PAGE {page_number + 1} - Detected Delivery: {delivery_number}")
 
-                if customer == "crevier lubricants inc":
+                if customer in {"crevier lubricants inc", "catalys lubricants inc"}:
                     if po_number and delivery_number:
                         output_filename = customer_mapping[customer](po_number, delivery_number)
                     else:
-                        output_filename = f"Crevier_{page_number + 1}"
+                        fallback_name = "Crevier" if customer == "crevier lubricants inc" else "Catalys"
+                        output_filename = f"{fallback_name}_{page_number + 1}"
                 else:
                     if delivery_number:
                         output_filename = customer_mapping[customer]("", delivery_number)
@@ -454,23 +457,81 @@ def upload_file_by_delivery(file_path: str):
 # ===================== Gmail: service, message processing, PROGRESS =====================
 
 def gmail_service():
-    """
-    Build an authenticated Gmail service using credentials.json and token.json.
-    On first run, opens a browser window to authorize access.
-    """
+    """Get Gmail service using OAuth2."""
     creds = None
-    if os.path.exists(GMAIL_TOKEN_FILE):
+    
+    # First try to load from environment variables (for production)
+    if os.getenv('GMAIL_TOKEN_JSON'):
+        try:
+            import json
+            token_data = json.loads(os.getenv('GMAIL_TOKEN_JSON'))
+            creds = Credentials.from_authorized_user_info(token_data, GMAIL_SCOPES)
+            logging.info("Loaded Gmail credentials from environment variable")
+        except Exception as e:
+            logging.error(f"Error loading credentials from environment: {e}")
+    
+    # Fallback to token file (for local development)
+    elif os.path.exists(GMAIL_TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(GMAIL_TOKEN_FILE, GMAIL_SCOPES)
+        logging.info(f"Loaded Gmail credentials from {GMAIL_TOKEN_FILE}")
+    
+    # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists(GMAIL_CREDENTIALS_FILE):
-                raise RuntimeError("Gmail credentials.json not found; place it next to app.py or set GMAIL_CREDENTIALS_FILE")
-            flow = InstalledAppFlow.from_client_secrets_file(GMAIL_CREDENTIALS_FILE, GMAIL_SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(GMAIL_TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
+            try:
+                creds.refresh(Request())
+                logging.info("Refreshed Gmail credentials")
+                
+                # For local development, save refreshed token back to file
+                if not os.getenv('GMAIL_TOKEN_JSON') and os.path.exists(os.path.dirname(GMAIL_TOKEN_FILE) if os.path.dirname(GMAIL_TOKEN_FILE) else '.'):
+                    try:
+                        with open(GMAIL_TOKEN_FILE, 'w') as token:
+                            token.write(creds.to_json())
+                        logging.info("Saved refreshed token to file")
+                    except Exception as e:
+                        logging.error(f"Could not save refreshed token: {e}")
+                        
+            except Exception as e:
+                logging.error(f"Error refreshing credentials: {e}")
+                creds = None
+        
+        if not creds or not creds.valid:
+            # Try to load credentials.json from environment variable for initial auth
+            if os.getenv('GMAIL_CREDENTIALS_JSON'):
+                try:
+                    import json
+                    import tempfile
+                    credentials_data = json.loads(os.getenv('GMAIL_CREDENTIALS_JSON'))
+                    
+                    # Create a temporary file for the flow
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_creds:
+                        json.dump(credentials_data, temp_creds)
+                        temp_creds_path = temp_creds.name
+                    
+                    flow = InstalledAppFlow.from_client_secrets_file(temp_creds_path, GMAIL_SCOPES)
+                    # In production, we can't run local server, so this will fail
+                    # The token should already be provided via GMAIL_TOKEN_JSON
+                    logging.error("Cannot perform interactive auth in production environment")
+                    
+                    # Clean up temp file
+                    os.unlink(temp_creds_path)
+                    raise RuntimeError("Gmail token expired and cannot refresh in production")
+                    
+                except Exception as e:
+                    logging.error(f"Error with credentials from environment: {e}")
+                    raise RuntimeError("Gmail credentials setup failed in production")
+                    
+            elif os.path.exists(GMAIL_CREDENTIALS_FILE):
+                # Local development - can do interactive auth
+                flow = InstalledAppFlow.from_client_secrets_file(GMAIL_CREDENTIALS_FILE, GMAIL_SCOPES)
+                creds = flow.run_local_server(port=0)
+                
+                # Save the credentials for the next run
+                with open(GMAIL_TOKEN_FILE, 'w') as token:
+                    token.write(creds.to_json())
+            else:
+                raise RuntimeError("Gmail credentials not found. Set GMAIL_TOKEN_JSON and GMAIL_CREDENTIALS_JSON environment variables for production.")
+
     return build('gmail', 'v1', credentials=creds)
 
 def _iter_parts(payload):
@@ -567,15 +628,7 @@ def _gmail_worker(job_id: str, query: str):
 
                     _set_progress(job_id, processed=processed, skipped=skipped)
 
-                # Mark read only if we processed something and scope allows
-                if found_any and 'gmail.modify' in ''.join(GMAIL_SCOPES):
-                    try:
-                        svc.users().messages().modify(
-                            userId='me', id=msg['id'],
-                            body={'removeLabelIds': ['UNREAD']}
-                        ).execute()
-                    except Exception as e:
-                        logging.warning(f"Could not mark message read: {e}")
+                # Note: We no longer mark messages as read since we're processing all emails with attachments
 
             next_page_token = resp.get('nextPageToken')
             if not next_page_token:
@@ -720,48 +773,40 @@ def upload_match(sheet_id, row_id, filename):
 @app.route('/upload_all_matches', methods=['POST'])
 def upload_all_matches():
     """
-    Upload every matched file in session['matches'] to its corresponding row.
+    Uploads all matching PODs to their respective Smartsheet rows.
+    Streams real-time progress updates as JSON lines for frontend progress bar.
     """
     if not ss_client:
         flash("Smartsheet is not configured. Set SMARTSHEET_API in your .env.")
         return redirect(url_for('smartsheet_match'))
 
-    matches = session.get('matches', []) or []
-    if not matches:
-        flash("No matches to upload.")
-        return redirect(url_for('smartsheet_match'))
+    matches = session.get('matches', [])
+    total = len(matches)
 
-    successes = 0
-    failures = 0
-    for m in matches:
-        filename = m.get('file')
-        sheet_id = m.get('sheet_id')
-        row_id = m.get('row_id')
-        file_path = os.path.join(OUTPUT_FOLDER, filename)
+    def generate():
+        uploaded = 0
+        for m in matches:
+            file_path = os.path.join(OUTPUT_FOLDER, m["file"])
+            if not os.path.exists(file_path):
+                logging.warning(f"File not found: {m['file']}")
+                continue
+            try:
+                with open(file_path, 'rb') as fh:
+                    ss_client.Attachments.attach_file_to_row(
+                        int(m["sheet_id"]),
+                        int(m["row_id"]),
+                        (m["file"], fh, 'application/pdf')
+                    )
+                uploaded += 1
+                logging.info(f"Uploaded {m['file']} to Smartsheet (sheet {m['sheet_id']}, row {m['row_id']})")
+            except Exception as e:
+                logging.exception(f"Smartsheet upload failed for {m['file']}: {e}")
+                continue
+            yield f'{{"progress": {uploaded}, "total": {total}}}\n'
 
-        if not (filename and sheet_id and row_id and os.path.exists(file_path)):
-            failures += 1
-            continue
-
-        try:
-            with open(file_path, 'rb') as fh:
-                ss_client.Attachments.attach_file_to_row(
-                    int(sheet_id),
-                    int(row_id),
-                    (filename, fh, 'application/pdf')
-                )
-            successes += 1
-        except Exception as e:
-            logging.exception(f"Smartsheet upload failed for {filename}")
-            failures += 1
-
-    flash(f"Upload complete: {successes} succeeded, {failures} failed.")
-    return redirect(url_for('smartsheet_match'))
+    return Response(stream_with_context(generate()), mimetype='text/plain')
 
 # ============================================================================
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-
-

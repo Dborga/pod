@@ -47,7 +47,6 @@ executing==2.0.1
 fastjsonschema==2.21.1
 filelock==3.18.0
 findpython==0.6.3
-fitz==0.0.1.dev2
 Flask==3.1.0
 flask-cors==5.0.1
 fpdf==1.7.2
@@ -183,7 +182,7 @@ RapidFuzz==3.12.2
 rdflib==6.3.2
 regex==2024.11.6
 reportlab==4.3.1
-requests==2.32.3
+requests>=2.31.0,<2.32.0
 requests-oauthlib==2.0.0
 requests-toolbelt==1.0.0
 rsa==4.9.1
