@@ -6,25 +6,6 @@ authors = ["Your Name <you@example.com>"]
 readme = "README.md"
 package-mode = false
 
-[project]
-name = "pods"
-version = "0.1.0"
-description = ""
-readme = "README.md"
-requires-python = ">=3.11,<4.0"
-authors = [
-  { name = "Your Name", email = "you@example.com" },
-]
-dependencies = [
-  "Flask==3.1.0",
-  "gunicorn==23.0.0",
-  "pytesseract==0.3.13",
-  "PyMuPDF==1.25.4",
-  "regex==2024.11.6",
-  "rapidfuzz==3.12.2",
-  "Pillow==11.1.0",
-]
-
 [tool.poetry.dependencies]
 python = "^3.11"
 flask = "3.1.0"
