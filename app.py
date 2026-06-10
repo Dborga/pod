@@ -53,8 +53,8 @@ def debug_tesseract():
     return f"PATH: {env_path}\nTesseract path: {tesseract_path}"
 # ----------------------
 
-UPLOAD_FOLDER = 'uploads'
-OUTPUT_FOLDER = 'outputs'
+UPLOAD_FOLDER = '/tmp/uploads'
+OUTPUT_FOLDER = '/tmp/outputs'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
@@ -63,7 +63,7 @@ UPLOAD_PASSWORD = os.getenv('UPLOAD_PASSWORD')  # set in .env
 SMARTSHEET_TOKEN = os.getenv("SMARTSHEET_API")  # set in .env
 
 # Gmail config
-INBOUND_ATTACH_DIR = os.getenv("INBOUND_ATTACH_DIR", "email_attachments")
+INBOUND_ATTACH_DIR = os.getenv("INBOUND_ATTACH_DIR", "/tmp/email_attachments")
 os.makedirs(INBOUND_ATTACH_DIR, exist_ok=True)
 # Process all emails with attachments from the last 7 days (configurable via env)
 GMAIL_QUERY = os.getenv("GMAIL_QUERY", "has:attachment newer_than:7d")
