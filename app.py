@@ -808,5 +808,13 @@ def upload_all_matches():
 
 # ============================================================================
 
+@app.route('/debug-tesseract')
+def debug_tesseract():
+    try:
+        tesseract_path = subprocess.check_output(["which", "tesseract"]).decode().strip()
+    except Exception as e:
+        tesseract_path = f"Error: {e}"
+    return f"Tesseract path: {tesseract_path}"
+    
 if __name__ == '__main__':
     app.run(debug=True)
