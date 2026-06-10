@@ -1,23 +1,22 @@
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.poetry]
+[project]
 name = "pods"
 version = "0.1.0"
 description = ""
-authors = ["Your Name <you@example.com>"]
 readme = "README.md"
+requires-python = ">=3.11,<3.12"
+authors = [
+  { name = "Your Name", email = "you@example.com" },
+]
+dependencies = [
+  "Flask==3.1.0",
+  "gunicorn==23.0.0",
+  "pytesseract==0.3.13",
+  "PyMuPDF==1.25.4",
+  "regex==2024.11.6",
+  "rapidfuzz==3.12.2",
+  "Pillow==11.1.0",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.11,<3.12"
-flask = "3.1.0"
-gunicorn = "23.0.0"
-pytesseract = "0.3.13"
-PyMuPDF = "1.25.4"
-regex = "2024.11.6"
-rapidfuzz = "3.12.2"
-pillow = "11.1.0"
-
-[tool.poetry.group.dev.dependencies]
-# Add dev dependencies here if needed
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
